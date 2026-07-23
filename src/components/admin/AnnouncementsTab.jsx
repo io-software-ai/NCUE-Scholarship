@@ -1,0 +1,453 @@
+'use client';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import CreateAnnouncementModal from '@/components/CreateAnnouncementModal';
+import UpdateAnnouncementModal from '@/components/UpdateAnnouncementModal';
+import DeleteAnnouncementModal from '@/components/DeleteAnnouncementModal';
+import AnnouncementPreviewModal from '@/components/AnnouncementPreviewModal';
+import KnowledgeViewerModal from '@/components/admin/KnowledgeViewerModal';
+import Toast from '@/components/ui/Toast';
+import { Plus, Search, ChevronsUpDown, ArrowDown, ArrowUp, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, ChevronDown, Link, Eye, Loader2, BookOpen, RefreshCw, Mail } from 'lucide-react';
+import { authFetch } from '@/lib/authFetch';
+import { motion, AnimatePresence } from 'framer-motion';
+import DownloadPDFButton from './DownloadPDFButton';
+
+const LineIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="16" height="16" viewBox="0 0 50 50" className="inline-block" aria-hidden="true">
+        <path fill="#00c300" d="M12.5,42h23c3.59,0,6.5-2.91,6.5-6.5v-23C42,8.91,39.09,6,35.5,6h-23C8.91,6,6,8.91,6,12.5v23C6,39.09,8.91,42,12.5,42z"></path><path fill="#fff" d="M37.113,22.417c0-5.865-5.88-10.637-13.107-10.637s-13.108,4.772-13.108,10.637c0,5.258,4.663,9.662,10.962,10.495c0.427,0.092,1.008,0.282,1.155,0.646c0.132,0.331,0.086,0.85,0.042,1.185c0,0-0.153,0.925-0.187,1.122c-0.057,0.331-0.263,1.296,1.135,0.707c1.399-0.589,7.548-4.445,10.298-7.611h-0.001C36.203,26.879,37.113,24.764,37.113,22.417z M18.875,25.907h-2.604c-0.379,0-0.687-0.308-0.687-0.688V20.01c0-0.379,0.308-0.687,0.687-0.687c0.379,0,0.687,0.308,0.687,0.687v4.521h1.917c0.379,0,0.687,0.308,0.687,0.687C19.562,25.598,19.254,25.907,18.875,25.907z M21.568,25.219c0,0.379-0.308,0.688-0.687,0.688s-0.687-0.308-0.687-0.688V20.01c0-0.379,0.308-0.687,0.687-0.687s0.687,0.308,0.687,0.687V25.219z M27.838,25.219c0,0.297-0.188,0.559-0.47,0.652c-0.071,0.024-0.145,0.036-0.218,0.036c-0.215,0-0.42-0.103-0.549-0.275l-2.669-3.635v3.222c0,0.379-0.308,0.688-0.688,0.688c-0.379,0-0.688-0.308-0.688-0.688V20.01c0-0.296,0.189-0.558,0.47-0.652c0.071-0.024,0.144-0.035,0.218-0.035c0.214,0,0.42,0.103,0.549,0.275l2.67,3.635V20.01c0-0.379,0.309-0.687,0.688-0.687c0.379,0,0.687,0.308,0.687,0.687V25.219z M32.052,21.927c0.379,0,0.688,0.308,0.688,0.688c0,0.379-0.308,0.687-0.688,0.687h-1.917v1.23h1.917c0.379,0,0.688,0.308,0.688,0.687c0,0.379-0.309,0.688-0.688,0.688h-2.604c-0.378,0-0.687-0.308-0.687-0.688v-2.603c0-0.001,0-0.001,0-0.001c0,0,0-0.001,0-0.001v-2.601c0-0.001,0-0.001,0-0.002c0-0.379,0.308-0.687,0.687-0.687h2.604c0.379,0,0.688,0.308,0.688,0.687s-0.308,0.687-0.688,0.687h-1.917v1.23H32.052z"></path>
+    </svg>
+);
+const GmailIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="16" height="16" viewBox="0 0 50 50" className="inline-block" aria-hidden="true">
+        <path fill="#4caf50" d="M45,16.2l-5,2.75l-5,4.75L35,40h7c1.657,0,3-1.343,3-3V16.2z"></path><path fill="#1e88e5" d="M3,16.2l3.614,1.71L13,23.7V40H6c-1.657,0-3-1.343-3-3V16.2z"></path><polygon fill="#e53935" points="35,11.2 24,19.45 13,11.2 12,17 13,23.7 24,31.95 35,23.7 36,17"></polygon><path fill="#c62828" d="M3,12.298V16.2l10,7.5V11.2L9.876,8.859C9.132,8.301,8.228,8,7.298,8h0C4.924,8,3,9.924,3,12.298z"></path><path fill="#fbc02d" d="M45,12.298V16.2l-10,7.5V11.2l3.124-2.341C38.868,8.301,39.772,8,40.702,8h0 C43.076,8,45,9.924,45,12.298z"></path>
+    </svg>
+);
+
+// --- Helper Functions for Notifications ---
+const sendEmailAnnouncement = async (id, showToast) => {
+    try {
+        showToast('正在透過 mail 發送公告...', 'info');
+        const res = await authFetch('/api/send-announcement', { method: 'POST', body: JSON.stringify({ announcementId: id }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'mail 寄送失敗');
+        showToast(data.message || '公告已成功透過 mail 寄送！', 'success');
+    } catch (err) { showToast(err.message || 'mail 寄送失敗，請稍後再試', 'error'); }
+};
+
+const sendLineBroadcast = async (id, showToast) => {
+    try {
+        showToast('正在透過 LINE 寄送公告...', 'info');
+        const res = await authFetch('/api/broadcast-line-announcement', { method: 'POST', body: JSON.stringify({ announcementId: id }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'LINE 寄送失敗');
+        showToast(data.message || '公告已成功透過 LINE 寄送！', 'success');
+    } catch (err) { showToast(err.message || 'LINE 寄送失敗，請稍後再試', 'error'); }
+};
+
+export default function AnnouncementsTab() {
+    const [expandedId, setExpandedId] = useState(null);
+    const [announcements, setAnnouncements] = useState([]); // Renamed from allAnnouncements
+    const [loading, setLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editing, setEditing] = useState(null);
+    const [deletingAnn, setDeletingAnn] = useState(null);
+    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+    const [preview, setPreview] = useState({ open: false, type: '', html: '', text: '', id: null });
+
+    const [searchTerm, setSearchTerm] = useState('');
+    const [sort, setSort] = useState({ column: 'created_at', direction: 'desc' });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [totalCount, setTotalCount] = useState(0);
+
+    const showToast = (message, type = 'success') => setToast({ show: true, message, type });
+    const hideToast = () => setToast(prev => ({ ...prev, show: false }));
+
+    const fetchAnnouncements = useCallback(async () => {
+        setLoading(true);
+        try {
+            // Select limited columns for the list to improve performance
+            let query = supabase.from('announcements')
+                .select('id, title, category, view_count, application_end_date, is_active, updated_at, internal_id', { count: 'exact' });
+
+            if (searchTerm) {
+                // Server-side search
+                query = query.or(`title.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%,internal_id.ilike.%${searchTerm}%`);
+            }
+
+            // Server-side sorting
+            query = query.order(sort.column, { ascending: sort.direction === 'asc' });
+
+            // Server-side pagination
+            const from = (currentPage - 1) * rowsPerPage;
+            const to = from + rowsPerPage - 1;
+            query = query.range(from, to);
+
+            const { data, error, count } = await query;
+            
+            if (error) throw error;
+            
+            setAnnouncements(data || []);
+            setTotalCount(count || 0);
+        } catch (error) { 
+            console.error("Error fetching announcements:", error);
+            showToast('無法載入公告列表，請稍後再試', 'error'); 
+        } finally { 
+            setLoading(false); 
+        }
+    }, [currentPage, rowsPerPage, searchTerm, sort]);
+
+    useEffect(() => { fetchAnnouncements(); }, [fetchAnnouncements]);
+
+    // Client-side calculations removed. We use server-side data directly.
+
+    const totalPages = Math.ceil(totalCount / rowsPerPage);
+
+    const handleSort = (column) => {
+        setSort(prev => ({ column, direction: prev.column === column && prev.direction === 'desc' ? 'asc' : 'desc' }));
+        setCurrentPage(1);
+    };
+
+    const renderSortIcon = (column) => {
+        if (sort.column !== column) return <ChevronsUpDown className="h-4 w-4 ml-1 text-ink-soft/60" aria-hidden="true" />;
+        return sort.direction === 'asc' ? <ArrowUp className="h-4 w-4 ml-1 text-primary" aria-hidden="true" /> : <ArrowDown className="h-4 w-4 ml-1 text-primary" aria-hidden="true" />;
+    };
+
+    const handleEditClick = async (partialAnn) => {
+        try {
+            // Fetch full details before opening the edit modal
+            const { data, error } = await supabase
+                .from('announcements')
+                .select('*, attachments(*)')
+                .eq('id', partialAnn.id)
+                .single();
+            
+            if (error) throw error;
+            setEditing(data);
+        } catch (error) {
+            console.error("Error fetching full announcement for edit:", error);
+            showToast("無法載入公告詳細資料", "error");
+        }
+    };
+
+    // --- 開啟預覽視窗 ---
+    const openPreview = async (type, ann) => {
+        // Preview might need full details too? 
+        // Currently PreviewModal takes 'announcement' object.
+        // It likely renders summary/target_audience.
+        // So we should fetch full details if missing.
+        let fullAnn = ann;
+        if (!ann.target_audience || !ann.summary) {
+             try {
+                const { data, error } = await supabase
+                    .from('announcements')
+                    .select('*, attachments(*)')
+                    .eq('id', ann.id)
+                    .single();
+                if (data && !error) fullAnn = data;
+             } catch(e) { console.error(e); }
+        }
+
+        setPreview({
+            open: true,
+            type: type,
+            announcement: fullAnn,
+            id: ann.id
+        });
+    };
+
+    const handlePreviewConfirm = async () => {
+        if (preview.type === 'email') await sendEmailAnnouncement(preview.id, showToast);
+        else if (preview.type === 'line') await sendLineBroadcast(preview.id, showToast);
+        setPreview(prev => ({ ...prev, open: false }));
+    };
+
+    const handleCopyLink = async (announcementId) => {
+        const siteUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        const link = `${siteUrl}/?announcement_id=${announcementId}`;
+        try {
+            await navigator.clipboard.writeText(link);
+            showToast('公告連結已成功複製！', 'success');
+        } catch (err) {
+            showToast('複製連結失敗', 'error');
+        }
+    };
+
+    const ghostButtonBase = "flex items-center justify-center gap-1.5 rounded-lg border transition-all duration-300 ease-in-out transform disabled:transform-none disabled:shadow-none";
+    // 統一按鈕系統:primary 輪廓(主要動作)/danger 輪廓(破壞性)/中性輪廓(其餘),僅 hover 變色
+    const actionBtnBase = 'flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors duration-150';
+    const buttonStyles = {
+        add: `${actionBtnBase} px-4 py-2 text-sm border-primary/40 text-primary hover:bg-primary-tint`,
+        edit: `${actionBtnBase} border-primary/40 text-primary hover:bg-primary-tint`,
+        delete: `${actionBtnBase} border-danger/30 text-danger hover:bg-danger/10`,
+        send: `${actionBtnBase} border-line-strong text-ink-soft hover:bg-surface-hover hover:text-ink`,
+        line: `${actionBtnBase} border-line-strong text-ink-soft hover:bg-surface-hover hover:text-ink`,
+        link: `${actionBtnBase} border-line-strong text-ink-soft hover:bg-surface-hover hover:text-ink`,
+        download: `${actionBtnBase} border-line-strong text-ink-soft hover:bg-surface-hover hover:text-ink`,
+    };
+
+    // 知識庫檢視 / 全量同步
+    const [knowledgeAnn, setKnowledgeAnn] = useState(null);
+    const [isSyncingAll, setIsSyncingAll] = useState(false);
+    const handleSyncAll = async () => {
+        if (isSyncingAll) return;
+        setIsSyncingAll(true);
+        try {
+            const res = await authFetch('/api/admin/announcements/sync-knowledge', {
+                method: 'POST', body: JSON.stringify({ all: true })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '同步失敗');
+            showToast(data.message || '知識庫全量同步完成', 'success');
+        } catch (e) {
+            showToast(e.message, 'error');
+        } finally {
+            setIsSyncingAll(false);
+        }
+    };
+
+    return (
+        <div className="space-y-6 select-none">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="relative w-full flex-grow">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-soft/60" aria-hidden="true" />
+                    <input type="text" placeholder="搜尋標題、分類、內部辨識名..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                        aria-label="搜尋公告"
+                        title="搜尋公告標題、分類或內部辨識名"
+                        className="w-full pl-10 pr-4 py-2 bg-surface border border-line-strong rounded-lg shadow-sm transition-all duration-300
+                            focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/30"
+                    />
+                </div>
+                <button onClick={handleSyncAll} disabled={isSyncingAll}
+                    aria-label="全量同步 AI 知識庫" title="將所有上架公告重新整理為 AI 易讀內容（含移除已下架條目）"
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-primary/40 text-sm font-semibold text-primary bg-surface hover:bg-primary-tint transition-colors duration-150 disabled:opacity-60 w-full sm:w-auto whitespace-nowrap">
+                    {isSyncingAll ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} 同步知識庫
+                </button>
+                <button onClick={() => setIsModalOpen(true)} aria-label="新增一筆獎助學金公告" className={`${buttonStyles.add} w-full sm:w-auto whitespace-nowrap`}>
+                    <Plus size={16} aria-hidden="true" /> 新增公告
+                </button>
+            </div>
+
+            <div className="rounded-xl w-full bg-surface shadow-lg overflow-hidden border border-line/80">
+                {/* --- DESKTOP TABLE VIEW --- */}
+                <div className="hidden md:block">
+                    <table className="w-full text-sm table-layout-fixed">
+                        <thead className="bg-page/70 text-left">
+                            <tr>
+                                <th className="p-4 px-6 font-semibold text-ink-soft">標題</th>
+                                <th className="p-4 px-6 font-semibold text-ink-soft w-24">分類</th>
+                                <th className="p-4 px-6 font-semibold text-ink-soft cursor-pointer w-28 text-center" onClick={() => handleSort('view_count')}>
+                                    <div className="flex items-center justify-center">瀏覽數 {renderSortIcon('view_count')}</div>
+                                </th>
+                                <th className="p-4 px-6 font-semibold text-ink-soft cursor-pointer w-36" onClick={() => handleSort('application_end_date')}>
+                                    <div className="flex items-center">申請截止日 {renderSortIcon('application_end_date')}</div>
+                                </th>
+                                <th className="p-4 px-6 font-semibold text-ink-soft w-28">狀態</th>
+                                <th className="p-4 px-6 font-semibold text-ink-soft cursor-pointer w-36" onClick={() => handleSort('updated_at')}>
+                                    <div className="flex items-center">最後更新 {renderSortIcon('updated_at')}</div>
+                                </th>
+                                <th className="p-4 px-6 font-semibold text-ink-soft text-center w-64">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                            {loading ? (
+                                <tr><td colSpan="7" className="text-center p-12 text-ink-soft"><Loader2 className="animate-spin h-6 w-6 mx-auto mb-2" aria-label="載入中" />載入中...</td></tr>
+                            ) : announcements.length === 0 ? (
+                                <tr><td colSpan="7" className="text-center p-12 text-ink-soft">找不到符合條件的公告。</td></tr>
+                            ) : (
+                                announcements.map((ann) => (
+                                    <tr key={ann.id} className="group table-row-modern border-b border-line last:border-0">
+                                        <td className="p-4 px-6 font-medium text-ink break-words">
+                                            <a 
+                                                href={`/?announcement_id=${ann.id}`} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="hover:text-primary hover:underline transition-colors duration-200"
+                                            >
+                                                {ann.title}
+                                            </a>
+                                        </td>
+                                        <td className="p-4 px-6 text-ink-soft">{ann.category}</td>
+                                        <td className="p-4 px-6 text-center text-ink-soft font-mono">
+                                            {(ann.view_count || 0).toLocaleString()}
+                                        </td>
+                                        <td className="p-4 px-6 text-ink-soft font-medium">{ann.application_end_date ? new Date(ann.application_end_date).toLocaleDateString('en-CA') : '無期限'}</td>
+                                        <td className="p-4 px-6">
+                                            <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${ann.is_active ? 'bg-ok/10 text-ok' : 'bg-page text-ink'}`}>{ann.is_active ? '上架' : '下架'}</span>
+                                        </td>
+                                        <td className="p-4 px-6 text-ink-soft">{new Date(ann.updated_at).toLocaleDateString()}</td>
+                                        <td className="p-4 px-6">
+                                            <div className="grid grid-cols-3 gap-1.5">
+                                                {/* 常駐按鈕 */}
+                                                <button onClick={() => handleEditClick(ann)} aria-label={`編輯公告: ${ann.title}`} title={`編輯公告: ${ann.title}`} className={`${buttonStyles.edit} whitespace-nowrap`}>編輯</button>
+                                                <button onClick={() => setDeletingAnn(ann)} aria-label={`刪除公告: ${ann.title}`} title={`刪除公告: ${ann.title}`} className={`${buttonStyles.delete} whitespace-nowrap`}>刪除</button>
+                                                <button onClick={() => handleCopyLink(ann.id)} aria-label={`複製公告連結: ${ann.title}`} title="複製公告連結" className={`${buttonStyles.link} whitespace-nowrap`}>連結</button>
+                                                
+                                                {/* 懸浮顯示按鈕 - 第二行 */}
+                                                <div className="col-span-3 grid grid-cols-3 gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
+                                                    <DownloadPDFButton announcement={ann} className={buttonStyles.download} />
+                                                    <button onClick={() => openPreview('email', ann)} aria-label="透過電子信箱寄送公告" title="透過電子信箱寄送公告" className={`${buttonStyles.send} w-full`}><Mail size={14} /></button>
+                                                    <button onClick={() => setKnowledgeAnn(ann)} aria-label="檢視 AI 知識庫內容" title="檢視 AI 知識庫內容" className={`${buttonStyles.link} w-full flex items-center justify-center`}><BookOpen size={14} /></button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                {/* --- MOBILE VIEW --- */}
+                <div className="md:hidden px-2 py-4 flex flex-col gap-3">
+                    {loading ? (
+                        <div className="text-center p-8 text-ink-soft"><Loader2 className="animate-spin h-6 w-6 mx-auto mb-2" aria-label="載入中" />載入中...</div>
+                    ) : announcements.length === 0 ? (
+                        <div className="text-center p-8 text-ink-soft">找不到符合條件的公告。</div>
+                    ) : (
+                        announcements.map(ann => {
+                            const isExpanded = expandedId === ann.id;
+                            return (
+                                <div key={ann.id}
+                                    className={`bg-surface rounded-lg transition-all duration-300
+                                        ${isExpanded ? 'shadow-lg ring-2 ring-primary ring-offset-2' : 'shadow-md border border-line/80'}
+                                    `}
+                                >
+                                    <button
+                                        onClick={() => setExpandedId(isExpanded ? null : ann.id)}
+                                        aria-label={isExpanded ? `收合公告: ${ann.title}` : `展開公告: ${ann.title}`}
+                                        className="w-full flex flex-col text-left p-4"
+                                    >
+                                        <div className="w-full mb-3">
+                                            <h3 className="font-bold text-base text-ink leading-snug">
+                                                <a 
+                                                    href={`/?announcement_id=${ann.id}`} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="hover:text-primary hover:underline transition-colors duration-200"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    {ann.title}
+                                                </a>
+                                            </h3>
+                                        </div>
+                                        
+                                        <div className="w-full flex items-center justify-between text-[11px] text-ink-soft border-t border-line pt-2.5">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-medium text-ink-soft/60 text-[10px]">瀏覽數：</span>
+                                                <span className="flex items-center gap-1 bg-page px-2 py-0.5 rounded-md text-ink-soft">
+                                                    <Eye className="w-3 h-3" aria-hidden="true" />
+                                                    {ann.view_count || 0}
+                                                </span>
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-medium text-ink-soft/60 text-[10px]">分類：</span>
+                                                    <span className="text-primary font-semibold">{ann.category}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 border-l border-line pl-3">
+                                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${ann.is_active ? 'bg-ok/10 text-ok' : 'bg-page text-ink-soft'}`}>
+                                                        {ann.is_active ? '上架' : '下架'}
+                                                    </span>
+                                                    <ChevronDown className={`h-4 w-4 text-ink-soft/60 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </button>
+
+                                    {/* --- Collapsible Content --- */}
+                                    <AnimatePresence>
+                                        {isExpanded && (
+                                            <motion.div
+                                                key="content"
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                                className="overflow-hidden"
+                                            >
+                                                <div className="border-t border-line p-4 pt-3 bg-page/30">
+                                                    {/* Details Grid - Removed Category and View Count as per request */}
+                                                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm mb-4">
+                                                        <div className="font-semibold text-ink-soft">申請截止</div>
+                                                        <div className="text-ink">{ann.application_end_date ? new Date(ann.application_end_date).toLocaleDateString('en-CA') : '無期限'}</div>
+
+                                                        <div className="font-semibold text-ink-soft">最後更新</div>
+                                                        <div className="text-ink">{new Date(ann.updated_at).toLocaleDateString()}</div>
+                                                    </div>
+
+                                                    {/* Action Buttons */}
+                                                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-line">
+                                                        <button onClick={() => handleEditClick(ann)} aria-label="編輯公告" title="編輯公告" className={`${buttonStyles.edit} whitespace-nowrap`}>編輯</button>
+                                                        <button onClick={() => setDeletingAnn(ann)} aria-label="刪除公告" title="刪除公告" className={`${buttonStyles.delete} whitespace-nowrap`}>刪除</button>
+                                                        <button onClick={() => handleCopyLink(ann.id)} aria-label="複製連結" title="複製公告連結" className={`${buttonStyles.link} whitespace-nowrap`}>連結</button>
+                                                        <DownloadPDFButton announcement={ann} className={buttonStyles.download} />
+                                                        <button onClick={() => openPreview('email', ann)} aria-label="電子郵件預覽並發送" title="電子郵件預覽並發送" className={`${buttonStyles.send} w-full`}><Mail size={14} /></button>
+                                                        <button onClick={() => setKnowledgeAnn(ann)} aria-label="檢視 AI 知識庫內容" title="檢視 AI 知識庫內容" className={`${buttonStyles.link} w-full flex items-center justify-center gap-1`}><BookOpen size={13} />知識庫</button>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="text-sm text-ink-soft font-medium">共 {totalCount} 筆資料，第 {currentPage} / {totalPages || 1} 頁</div>
+                <div className="flex items-center gap-2">
+                    <div className="relative">
+                        <select
+                            value={rowsPerPage}
+                            onChange={e => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                            aria-label="每頁顯示筆數"
+                            title="選擇每頁顯示的公告筆數"
+                            className="appearance-none w-full bg-surface border border-line-strong rounded-lg py-2 pl-4 pr-10 text-sm shadow-sm
+                                transition-all duration-300
+                                focus:outline-none focus:border-primary
+                                focus:ring-4 focus:ring-primary/30"
+                        >
+                            {[10, 25, 50].map(v => <option key={v} value={v}>{v} 筆 / 頁</option>)}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-ink-soft/60">
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </div>
+                    </div>
+                    <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="分頁導覽">
+                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} aria-label="第一頁" className="relative inline-flex items-center rounded-l-md px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronsLeft className="h-5 w-5" aria-hidden="true" /></button>
+                        <button onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1} aria-label="上一頁" className="relative inline-flex items-center px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronLeft className="h-5 w-5" aria-hidden="true" /></button>
+                        <button onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages || totalPages === 0} aria-label="下一頁" className="relative inline-flex items-center px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronRight className="h-5 w-5" aria-hidden="true" /></button>
+                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages || totalPages === 0} aria-label="最後一頁" className="relative inline-flex items-center rounded-r-md px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronsRight className="h-5 w-5" aria-hidden="true" /></button>
+                    </nav>
+                </div>
+            </div>
+
+            <CreateAnnouncementModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} refreshAnnouncements={fetchAnnouncements} />
+            <UpdateAnnouncementModal 
+                isOpen={!!editing} 
+                onClose={() => setEditing(null)} 
+                announcement={editing} 
+                refreshAnnouncements={fetchAnnouncements} 
+                onSwitchTo={setEditing}
+            />
+            <DeleteAnnouncementModal isOpen={!!deletingAnn} onClose={() => setDeletingAnn(null)} announcement={deletingAnn} refreshAnnouncements={fetchAnnouncements} />
+            {knowledgeAnn && (
+                <KnowledgeViewerModal announcement={knowledgeAnn} onClose={() => setKnowledgeAnn(null)} />
+            )}
+            <AnnouncementPreviewModal
+                isOpen={preview.open}
+                type={preview.type}
+                announcement={preview.announcement}
+                onConfirm={handlePreviewConfirm}
+                onClose={() => setPreview(prev => ({ ...prev, open: false }))}
+            />
+            <Toast show={toast.show} message={toast.message} type={toast.type} onClose={hideToast} />
+        </div>
+    );
+}

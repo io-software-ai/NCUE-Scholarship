@@ -1,0 +1,42 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+*.log
+npm-debug.log*
+
+# env files
+.env.local
+
+# vercel
+.vercel
+
+# next.js type generation
+next-env.d.ts
+
+# editors
+.vscode/
+.idea/
+
+# uploaded announcement attachments
+public/storage/attachments/*
+!public/storage/attachments/.gitkeep
+
+# backup directory
+/backups/
+
+# DigiRunner configuration and H2 database data
+/digirunner/
+# Google Project IDX (deprecated dev environment)
+.idx/
