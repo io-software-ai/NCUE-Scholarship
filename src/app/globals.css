@@ -1,0 +1,489 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* 深色模式以 data-theme 切換（ThemeToggle 寫入 <html data-theme="dark">） */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Design Tokens — 「乾淨淺色」系統
+ * 依大公司官網實查歸納（Stripe 藍黑文字 × Polaris 灰底白卡 × Carbon 表格）
+ * 在 JSX 直接使用：bg-page / bg-surface / bg-surface-hover / border-line /
+ * text-ink / text-ink-soft / bg-primary / text-primary / bg-primary-tint /
+ * text-ok / text-warn / text-danger / bg-cat-a ... bg-cat-g
+ */
+@theme {
+	--color-page: #F6F8FA;          /* 頁面底：冷調近白 */
+	--color-surface: #FFFFFF;       /* 卡片 / 表格表面 */
+	--color-surface-hover: #EFF4F9; /* 列 hover */
+	--color-line: #E3E8EE;          /* 1px 髮絲邊框 */
+	--color-line-strong: #7E8B99;   /* 輸入框邊框（非文字 3.5:1） */
+	--color-ink: #1C2B3A;           /* 主文字：藍黑 13.6:1 */
+	--color-ink-soft: #5B6B7C;      /* 次要文字 5.5:1 */
+
+	--color-primary: #005A9C;       /* 唯一強調色（品牌藍）：僅互動元素 */
+	--color-primary-hover: #004875;
+	--color-primary-tint: #E8F1F8;  /* 選中態底 */
+
+	--color-ok: #0F7A52;            /* 語意：開放申請 / 可兼領（文字用，過 AA） */
+	--color-warn: #B45309;          /* 語意：7 日內截止（文字用） */
+	--color-danger: #B42318;        /* 語意：3 日內 / 錯誤（文字用） */
+	--color-ok-bright: #16B364;     /* 語意指示點（非文字）：鮮豔綠 */
+	--color-warn-bright: #F79009;   /* 語意指示點（非文字）：鮮豔橙 */
+	--color-danger-bright: #F04438; /* 語意指示點（非文字）：鮮豔紅 */
+
+	/* A–G 分類墨色（同亮度帶，皆過 AA） */
+	--color-cat-a: #B42318;
+	--color-cat-b: #B54708;
+	--color-cat-c: #A15C07;
+	--color-cat-d: #067647;
+	--color-cat-e: #0E7090;
+	--color-cat-f: #3538CD;
+	--color-cat-g: #6941C6;
+
+	/* Footer（恆深色）：底色與品牌藍點綴，深色主題下與頁面同系融合 */
+	--color-footer: #1C2B3A;
+	--color-footer-accent: #66ABDF;
+
+	--ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root {
+	color-scheme: light;
+	--header-height: 72px;
+	--transition-speed: 0.6s;
+	--primary: #005A9C;
+	--primary-hover: #004875;
+	--primary-light: #64B5F6;
+	--secondary: #00A6D6;
+	--accent: #F7B538;
+	--background: #F6F8FA;
+	--surface: #FFFFFF;
+	--text: #1C2B3A;
+	--text-muted: #5B6B7C;
+	--border: #E3E8EE;
+	--success: #0F7A52;
+	--error: #B42318;
+}
+
+/* 深色主題：冷灰藍黑系（非暖棕），覆寫同名 token 變數 */
+[data-theme="dark"] {
+	color-scheme: dark;
+	--color-page: #10151B;
+	--color-surface: #171E26;
+	--color-surface-hover: #1E2731;
+	--color-line: #2A3542;
+	--color-line-strong: #576878;
+	--color-ink: #E7ECF2;
+	--color-ink-soft: #97A5B4;
+	--color-primary: #66ABDF;
+	--color-primary-hover: #8CC2EB;
+	--color-primary-tint: #1B2C3C;
+	--color-ok: #4BC194;
+	--color-warn: #E0A25B;
+	--color-danger: #EE8B80;
+	--color-ok-bright: #2ED47E;
+	--color-warn-bright: #FDB022;
+	--color-danger-bright: #F97066;
+	--color-cat-a: #EE8B80;
+	--color-cat-b: #E5985C;
+	--color-cat-c: #D3A94E;
+	--color-cat-d: #57C08F;
+	--color-cat-e: #5EB3CF;
+	--color-cat-f: #9EA4F0;
+	--color-cat-g: #BC9AE8;
+	--color-footer: #131920;
+
+	--background: #10151B;
+	--surface: #171E26;
+	--text: #E7ECF2;
+	--text-muted: #97A5B4;
+	--border: #2A3542;
+	--primary: #66ABDF;
+	--primary-hover: #8CC2EB;
+	--primary-light: #8CC2EB;
+	--success: #4BC194;
+	--error: #EE8B80;
+}
+
+@media (min-width: 640px) {
+	:root {
+		--header-height: 80px;
+	}
+}
+
+body {
+	background-color: var(--background);
+	color: var(--text);
+	font-family: var(--font-noto-sans), Arial, Helvetica, sans-serif;
+    min-height: 100dvh;
+}
+
+/* 阻止背景滾動 */
+body.modal-open {
+    overflow: hidden !important;
+    height: 100dvh !important;
+}
+
+/* Modal 開啟時隱藏 Header 與 捲動元件 */
+body.modal-open .header-fixed,
+body.modal-open .scroll-to-top {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+}
+
+/* --- Layout 容器 --- */
+.layout-container {
+	display: flex;
+	flex-direction: column;
+	min-height: 100dvh;
+}
+
+.main-content {
+	flex: 1;
+	padding-top: var(--header-height);
+}
+
+/* --- Header：漂浮膠囊（floating pill） --- */
+.header-fixed {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 1000;
+	height: var(--header-height);
+	padding: 10px 12px 0;
+	background: transparent;
+	pointer-events: none;
+	transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+	will-change: transform, opacity;
+}
+
+.header-pill {
+	pointer-events: auto;
+	height: calc(var(--header-height) - 18px);
+	border-radius: 9999px;
+	background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+	backdrop-filter: blur(16px) saturate(1.4);
+	-webkit-backdrop-filter: blur(16px) saturate(1.4);
+	border: 1px solid var(--color-line);
+	box-shadow: 0 6px 24px rgba(28, 43, 58, 0.08);
+	transition: background-color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.header-fixed.header-hidden {
+	transform: translateY(calc(-100% - 8px));
+	opacity: 0;
+	pointer-events: none;
+}
+
+[data-theme="dark"] .header-pill {
+	background: color-mix(in srgb, var(--color-surface) 84%, transparent);
+	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* 導覽連結 */
+.underline-extend {
+	position: relative;
+}
+
+.underline-extend::after {
+	content: '';
+	position: absolute;
+	bottom: 0;
+	left: 50%;
+	width: 0;
+	height: 2px;
+	background-color: var(--primary);
+	transition: all 0.3s ease-out;
+	transform: translateX(-50%);
+}
+
+.underline-extend:hover::after, 
+.nav-link.active.underline-extend::after {
+	width: 75%;
+}
+
+.nav-link {
+	color: var(--text-muted);
+	font-weight: 500;
+	padding: 8px 12px;
+	border-radius: 8px;
+	transition: all 0.3s ease;
+}
+
+.nav-link:hover, .nav-link.active {
+	color: var(--primary);
+}
+
+/* --- 表格列 hover：圓角浮塊（Notion 風）——列變成一塊圓角高亮區，柔和且定位明確 --- */
+.table-row-modern > td {
+	transition: background-color 0.15s ease, border-radius 0.15s ease;
+}
+.table-row-modern:hover > td,
+.table-row-modern:focus-visible > td {
+	background-color: color-mix(in srgb, var(--color-primary-tint) 60%, var(--color-surface));
+}
+.table-row-modern:hover > td:first-child,
+.table-row-modern:focus-visible > td:first-child {
+	border-radius: 10px 0 0 10px;
+}
+.table-row-modern:hover > td:last-child,
+.table-row-modern:focus-visible > td:last-child {
+	border-radius: 0 10px 10px 0;
+}
+
+/* 按鈕與輸入框 */
+.btn {
+	padding: 10px 20px;
+	border-radius: 8px;
+	font-weight: 500;
+	transition: all 0.3s ease;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn:hover { transform: translateY(-1px); }
+
+.input-field {
+	width: 100%;
+	padding: 12px 16px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background-color: var(--surface);
+	transition: all 0.3s ease;
+}
+
+.input-field:focus {
+	outline: none;
+	border-color: var(--primary);
+	box-shadow: 0 0 0 4px rgba(0, 90, 156, 0.15);
+}
+
+/* 動畫定義 */
+@keyframes move-particle {
+	0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+	25% { transform: translate(var(--x-end), var(--y-end)) scale(1.2); opacity: 0.8; }
+	50% { transform: translate(var(--x-start), var(--y-start)) scale(1); opacity: 0.5; }
+	75% { transform: translate(var(--x-end-2), var(--y-end-2)) scale(1.2); opacity: 0.8; }
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideInFromBottom {
+    from { transform: translateY(0.5rem); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-in {
+    animation-duration: 0.3s;
+    animation-fill-mode: forwards;
+    animation-timing-function: ease-out;
+}
+
+.fade-in { animation-name: fadeIn; }
+.slide-in-from-bottom-2 { animation-name: slideInFromBottom; }
+
+/* prose 排版：以 token 覆寫 typography plugin 的寫死灰階，深淺主題自動適配 */
+.prose {
+	--tw-prose-body: var(--color-ink);
+	--tw-prose-headings: var(--color-ink);
+	--tw-prose-lead: var(--color-ink-soft);
+	--tw-prose-links: var(--color-primary);
+	--tw-prose-bold: var(--color-ink);
+	--tw-prose-counters: var(--color-ink-soft);
+	--tw-prose-bullets: var(--color-line-strong);
+	--tw-prose-hr: var(--color-line);
+	--tw-prose-quotes: var(--color-ink);
+	--tw-prose-quote-borders: var(--color-line);
+	--tw-prose-captions: var(--color-ink-soft);
+	--tw-prose-code: var(--color-ink);
+	--tw-prose-pre-code: var(--color-page);
+	--tw-prose-pre-bg: var(--color-ink);
+	--tw-prose-th-borders: var(--color-line-strong);
+	--tw-prose-td-borders: var(--color-line);
+}
+
+/*
+ * 深色模式富文本救援：
+ * 編輯器（TinyMCE / Word 貼上）常帶 inline 深色文字（#000、#1~#3 開頭 hex、rgb(0..)、windowtext），
+ * 在深色底幾乎隱形 → 一律提亮為主題墨色。亮色強調（橘/紅/黃 = #c~#f 開頭）不受影響，保留管理員的重點標色。
+ */
+[data-theme="dark"] .rich-text-content [style*="color: #0" i],
+[data-theme="dark"] .rich-text-content [style*="color:#0" i],
+[data-theme="dark"] .rich-text-content [style*="color: #1" i],
+[data-theme="dark"] .rich-text-content [style*="color:#1" i],
+[data-theme="dark"] .rich-text-content [style*="color: #2" i],
+[data-theme="dark"] .rich-text-content [style*="color:#2" i],
+[data-theme="dark"] .rich-text-content [style*="color: #3" i],
+[data-theme="dark"] .rich-text-content [style*="color:#3" i],
+[data-theme="dark"] .rich-text-content [style*="color: #4" i],
+[data-theme="dark"] .rich-text-content [style*="color:#4" i],
+[data-theme="dark"] .rich-text-content [style*="color: rgb(0" i],
+[data-theme="dark"] .rich-text-content [style*="color: rgb(3" i],
+[data-theme="dark"] .rich-text-content [style*="color: rgb(5" i],
+[data-theme="dark"] .rich-text-content [style*="color: black" i],
+[data-theme="dark"] .rich-text-content [style*="color:black" i],
+[data-theme="dark"] .rich-text-content [style*="windowtext" i],
+[data-theme="dark"] .prose [style*="color: #0" i],
+[data-theme="dark"] .prose [style*="color:#0" i],
+[data-theme="dark"] .prose [style*="color: #1" i],
+[data-theme="dark"] .prose [style*="color:#1" i],
+[data-theme="dark"] .prose [style*="color: #2" i],
+[data-theme="dark"] .prose [style*="color:#2" i],
+[data-theme="dark"] .prose [style*="color: #3" i],
+[data-theme="dark"] .prose [style*="color:#3" i],
+[data-theme="dark"] .prose [style*="color: black" i],
+[data-theme="dark"] .prose [style*="windowtext" i] {
+	color: var(--color-ink) !important;
+}
+
+/* 淺色螢光底（黃/綠標記等 #e/#f 開頭或 rgb(25x)）上的文字維持深色，且底色微降避免刺眼 */
+[data-theme="dark"] .rich-text-content [style*="background-color: #f" i],
+[data-theme="dark"] .rich-text-content [style*="background-color:#f" i],
+[data-theme="dark"] .rich-text-content [style*="background-color: #e" i],
+[data-theme="dark"] .rich-text-content [style*="background-color:#e" i],
+[data-theme="dark"] .rich-text-content [style*="background-color: rgb(25" i],
+[data-theme="dark"] .rich-text-content [style*="background-color: rgb(24" i],
+[data-theme="dark"] .prose [style*="background-color: #f" i],
+[data-theme="dark"] .prose [style*="background-color:#f" i],
+[data-theme="dark"] .prose [style*="background-color: #e" i],
+[data-theme="dark"] .prose [style*="background-color:#e" i] {
+	color: #1C2B3A !important;
+	filter: saturate(0.85) brightness(0.92);
+}
+
+/* 富文本表格（公告內容/聊天）：單一樣式來源，!important 壓過編輯器帶入的 inline 顏色，深淺主題自動適配 */
+.rich-text-content table {
+	width: 100%;
+	border-collapse: separate;
+	border-spacing: 0;
+	border: 1px solid var(--color-line);
+	border-radius: 0.5rem;
+	overflow: hidden;
+}
+
+/* 已有捲動容器外框時，內層表格不再畫框（避免雙框） */
+.table-scroll-wrapper table,
+.rich-text-content .table-scroll-wrapper table {
+	border: 0 !important;
+	border-radius: 0;
+}
+
+.rich-text-content th, .rich-text-content td {
+	padding: 0.75rem 1rem;
+	border-bottom: 1px solid var(--color-line) !important;
+	border-left: 1px solid var(--color-line) !important;
+	border-top: 0 !important;
+	border-right: 0 !important;
+	background-color: var(--color-surface) !important;
+	color: var(--color-ink) !important;
+}
+
+.rich-text-content th:first-child, .rich-text-content td:first-child {
+	border-left: 0 !important;
+}
+
+.rich-text-content th {
+	background-color: var(--color-page) !important;
+	font-weight: 600;
+	text-align: left;
+}
+
+.rich-text-content tr:last-child td {
+	border-bottom: 0 !important;
+}
+
+/* 儲存格背景需跟著外框圓角收邊，否則表頭方角會從圓角處穿出 */
+.rich-text-content table tr:first-child th:first-child,
+.rich-text-content table tr:first-child td:first-child {
+	border-top-left-radius: calc(0.5rem - 1px);
+}
+.rich-text-content table tr:first-child th:last-child,
+.rich-text-content table tr:first-child td:last-child {
+	border-top-right-radius: calc(0.5rem - 1px);
+}
+.rich-text-content table tr:last-child td:first-child {
+	border-bottom-left-radius: calc(0.5rem - 1px);
+}
+.rich-text-content table tr:last-child td:last-child {
+	border-bottom-right-radius: calc(0.5rem - 1px);
+}
+
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+
+@layer utilities {
+	.gemini-avatar-glow {
+		position: relative;
+	}
+	.gemini-avatar-glow::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		border-radius: 9999px;
+		background: conic-gradient(from 180deg, #1a73e8, #e84235, #fbbc05, #34a853, #1a73e8);
+		animation: spin 1.2s linear infinite;
+		filter: blur(6px);
+		opacity: 0.9;
+		z-index: -1;
+	}
+}
+
+/* --- Accessibility (Q9 & Q10) --- */
+.skip-link {
+    position: absolute;
+    top: -100px;
+    left: 0;
+    background: var(--primary);
+    color: white;
+    padding: 12px 24px;
+    z-index: 9999;
+    transition: top 0.3s;
+    font-weight: bold;
+    border-radius: 0 0 8px 0;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
+/* 1. 移除滑鼠點選樣式 (針對非鍵盤操作) */
+:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+button:focus:not(:focus-visible),
+[tabindex="-1"]:focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
+    --tw-ring-offset-width: 0px !important;
+    --tw-ring-width: 0px !important;
+}
+
+/* 2. 鍵盤 TAB 選取樣式 (Focus-Visible) - 強化視覺顯見度，符合無障礙最高標準 */
+:focus-visible {
+    outline: none;
+    border-color: var(--primary); /* 邊框顏色加深 */
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 40%, transparent); /* 發光範圍加大且更深 */
+}
+
+/* 特定元件優化 */
+.nav-link:focus-visible {
+    background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border-radius: 8px;
+}
+
+.input-field:focus {
+	border-color: var(--primary-light);
+	box-shadow: 0 0 0 3px rgba(100, 181, 246, 0.2);
+    outline: none !important;
+}
+
+.input-field:focus-visible {
+	border-color: var(--primary) !important;
+	box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-primary) 30%, transparent) !important;
+}

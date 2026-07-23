@@ -1,0 +1,33 @@
+# 在 nginx 配置文件中 (/etc/nginx/sites-available/scholarship-api)
+# 在 location /supabase/ 區塊中添加以下 CORS 配置：
+
+location /supabase/ {
+    # 現有的代理配置
+    proxy_pass http://localhost:8000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    
+    # 添加 CORS headers
+    add_header 'Access-Control-Allow-Origin' '*' always;
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, PATCH' always;
+    add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, apikey, X-Requested-With' always;
+    add_header 'Access-Control-Allow-Credentials' 'true' always;
+    add_header 'Access-Control-Max-Age' '86400' always;
+    
+    # 處理 preflight 請求
+    if ($request_method = 'OPTIONS') {
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, PATCH' always;
+        add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, apikey, X-Requested-With' always;
+        add_header 'Access-Control-Max-Age' '86400' always;
+        add_header 'Content-Type' 'text/plain; charset=utf-8';
+        add_header 'Content-Length' '0';
+        return 204;
+    }
+}
+
+# 重新載入 nginx 配置：
+# sudo nginx -t
+# sudo systemctl reload nginx

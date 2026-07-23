@@ -1,0 +1,497 @@
+'use client';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import Toast from '@/components/ui/Toast';
+import { authFetch } from '@/lib/authFetch';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import ConfirmByTypingModal from '@/components/ui/ConfirmByTypingModal';
+import { Search, Users, Shield, UserCheck, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Loader2, Mail, ChevronDown, Trash2, ChevronsUpDown} from 'lucide-react';
+import SendNotificationModal from './SendNotificationModal';
+
+const NotifyIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="16" height="16" viewBox="0 0 50 50" className="inline-block" aria-hidden="true">
+        <path fill="#4caf50" d="M45,16.2l-5,2.75l-5,4.75L35,40h7c1.657,0,3-1.343,3-3V16.2z"></path><path fill="#1e88e5" d="M3,16.2l3.614,1.71L13,23.7V40H6c-1.657,0-3-1.343-3-3V16.2z"></path><polygon fill="#e53935" points="35,11.2 24,19.45 13,11.2 12,17 13,23.7 24,31.95 35,23.7 36,17"></polygon><path fill="#c62828" d="M3,12.298V16.2l10,7.5V11.2L9.876,8.859C9.132,8.301,8.228,8,7.298,8h0C4.924,8,3,9.924,3,12.298z"></path><path fill="#fbc02d" d="M45,12.298V16.2l-10,7.5V11.2l3.124-2.341C38.868,8.301,39.772,8,40.702,8h0 C43.076,8,45,9.924,45,12.298z"></path>
+    </svg>
+);
+
+const GoogleIcon = () => (
+    <svg className="h-4 w-4 inline-block" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+);
+
+export default function UsersTab() {
+    const confirm = useConfirm();
+    const [deletingUser, setDeletingUser] = useState(null);
+    const { user: currentUser } = useAuth(); // 目前登入的使用者
+    const [users, setUsers] = useState([]); // Renamed from allUsers
+    const [loading, setLoading] = useState(true);
+    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+    const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(''); // 新增 debounce 狀態
+    const [roleFilter, setRoleFilter] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [totalCount, setTotalCount] = useState(0);
+    const [stats, setStats] = useState({ total: 0, admins: 0, users: 0 });
+
+    // --- Modal 相關狀態 ---
+    const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
+    const [notificationUser, setNotificationUser] = useState(null); // 要寄送通知的目標使用者
+    const [bulkTargetRole, setBulkTargetRole] = useState('all'); // 群發目標角色: 'all', 'user', 'admin'
+    const [isSending, setIsSending] = useState(false); // 控制 Modal 中的寄送中狀態
+    const [isDeletingId, setIsDeletingId] = useState(null); // 正在刪除的使用者 ID
+
+    // --- 下拉選單狀態 (行動版/點擊) ---
+    const [isBulkDropdownOpen, setIsBulkDropdownOpen] = useState(false);
+
+    const showToast = (message, type = 'success') => setToast({ show: true, message, type });
+    const hideToast = () => setToast(prev => ({ ...prev, show: false }));
+
+    // Debounce search term
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
+            if (searchTerm !== debouncedSearchTerm) {
+                setCurrentPage(1);
+            }
+        }, 500);
+
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [searchTerm]);
+
+    const fetchUsers = useCallback(async () => {
+        setLoading(true);
+        try {
+            const params = new URLSearchParams({
+                page: currentPage,
+                limit: rowsPerPage,
+                search: debouncedSearchTerm, // 使用 debouncedSearchTerm
+                role: roleFilter
+            });
+            const response = await authFetch(`/api/users?${params.toString()}`);
+            const data = await response.json();
+            if (response.ok) {
+                setUsers(Array.isArray(data.users) ? data.users : []);
+                setTotalCount(data.total || 0);
+                if (data.stats) {
+                    setStats(data.stats);
+                }
+            } else {
+                showToast(data.error || '獲取用戶資料失敗', 'error');
+                setUsers([]);
+            }
+        } catch (error) {
+            showToast('獲取用戶資料時發生錯誤', 'error');
+            setUsers([]);
+        } finally {
+            setLoading(false);
+        }
+    }, [currentPage, rowsPerPage, debouncedSearchTerm, roleFilter]);
+
+    useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+    // Role filter change handler
+    const handleRoleFilterChange = (newRole) => {
+        setRoleFilter(newRole);
+        setCurrentPage(1);
+    };
+
+    // 點擊外部關閉 dropdown
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (isBulkDropdownOpen && !event.target.closest('.bulk-email-dropdown')) {
+                setIsBulkDropdownOpen(false);
+            }
+        };
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+    }, [isBulkDropdownOpen]);
+
+
+    const handleRoleChange = async (userToUpdate) => {
+        if (currentUser && userToUpdate.id === currentUser.id) {
+            showToast('無法變更自己的權限', 'error');
+            return;
+        }
+
+        const newRole = userToUpdate.role === 'admin' ? 'user' : 'admin';
+        if (!(await confirm({ title: '變更權限', message: `確定要將使用者 ${userToUpdate.name} 的權限變更為「${newRole}」嗎？`, confirmLabel: '變更' }))) return;
+
+        try {
+            const response = await authFetch(`/api/users/${userToUpdate.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ role: newRole }),
+            });
+            const data = await response.json();
+            if (response.ok) {
+                showToast('使用者權限更新成功', 'success');
+                fetchUsers();
+            } else {
+                showToast(data.error || '更新失敗', 'error');
+            }
+        } catch (error) {
+            showToast('更新時發生錯誤', 'error');
+        }
+    };
+
+    const handleDeleteUser = (userToDelete) => {
+        if (currentUser && userToDelete.id === currentUser.id) {
+            showToast('無法刪除目前的登入帳號', 'error');
+            return;
+        }
+        setDeletingUser(userToDelete);
+    };
+
+    const executeDeleteUser = async () => {
+        const userToDelete = deletingUser;
+        if (!userToDelete) return;
+
+        setIsDeletingId(userToDelete.id);
+        try {
+            const response = await authFetch(`/api/users/${userToDelete.id}`, {
+                method: 'DELETE',
+            });
+            const data = await response.json();
+            if (response.ok) {
+                showToast('使用者已成功刪除', 'success');
+                fetchUsers();
+            } else {
+                showToast(data.error || '刪除失敗', 'error');
+            }
+        } catch (error) {
+            showToast('刪除時發生錯誤', 'error');
+        } finally {
+            setIsDeletingId(null);
+            setDeletingUser(null);
+        }
+    };
+
+    const openNotificationModal = (user, role = 'all') => {
+        setNotificationUser(user);
+        setBulkTargetRole(role);
+        setIsBulkDropdownOpen(false); // 關閉下拉選單
+        setIsNotificationModalOpen(true);
+    };
+
+    const handleSendNotification = async ({ subject, htmlContent }) => {
+        if (!subject || !htmlContent) {
+            showToast('標題和內文為必填欄位', 'error');
+            return;
+        }
+
+        setIsSending(true);
+        try {
+            const isBulkSend = !notificationUser;
+            const apiEndpoint = isBulkSend ? '/api/send-bulk-email' : '/api/send-custom-email';
+
+            let apiPayload;
+            if (isBulkSend) {
+                // Use new server-side role targeting
+                apiPayload = {
+                    targetRole: bulkTargetRole, // 'all', 'user', 'admin'
+                    subject: subject,
+                    body: htmlContent
+                };
+            } else {
+                 if (!notificationUser) {
+                    showToast('未指定收件人', 'error');
+                    setIsSending(false);
+                    return;
+                }
+                apiPayload = {
+                    email: notificationUser.emailFull,
+                    subject: subject,
+                    body: htmlContent
+                };
+            }
+
+            const response = await authFetch(apiEndpoint, {
+                method: 'POST',
+                body: JSON.stringify(apiPayload),
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showToast(data.message || '通知已成功寄送！', 'success');
+                setIsNotificationModalOpen(false);
+            } else {
+                showToast(data.error || '寄送失敗，請稍後再試', 'error');
+            }
+        } catch (error) {
+            console.error("Error sending email:", error);
+            showToast('寄送時發生網路或未知錯誤', 'error');
+        } finally {
+            setIsSending(false);
+        }
+    };
+
+    const totalPages = Math.ceil(totalCount / rowsPerPage);
+
+    // 計算群發的目標數量與標籤
+    const bulkTargetInfo = useMemo(() => {
+        let count = 0;
+        let label = '所有使用者';
+        if (bulkTargetRole === 'user') {
+            count = stats.users;
+            label = '一般使用者';
+        } else if (bulkTargetRole === 'admin') {
+            count = stats.admins;
+            label = '管理員';
+        } else {
+            count = stats.total; // or stats.admins + stats.users
+            label = '所有使用者';
+        }
+        return { count, label };
+    }, [bulkTargetRole, stats]);
+
+    // --- 按鈕樣式 ---
+    const ghostButtonBase = "flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border transition-all duration-300 ease-in-out transform disabled:transform-none disabled:shadow-none disabled:opacity-50 disabled:cursor-not-allowed";
+    // 統一按鈕系統(與公告管理一致)
+    const actionBtnBase = 'flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors duration-150';
+    const buttonStyles = {
+        demote: `${actionBtnBase} border-warn/40 text-warn hover:bg-warn/10 whitespace-nowrap`,
+        promote: `${actionBtnBase} border-primary/40 text-primary hover:bg-primary-tint whitespace-nowrap`,
+        delete: `${actionBtnBase} p-2 border-danger/30 text-danger hover:bg-danger/10`,
+        notify: `${actionBtnBase} p-2 border-line-strong text-ink-soft hover:bg-surface-hover hover:text-ink`,
+        notifyAll: `${actionBtnBase} py-3 px-4 border-primary/40 text-primary hover:bg-primary-tint whitespace-nowrap relative`,
+    };
+
+    return (
+        <div className="space-y-6 select-none">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:items-center">
+                <div className="lg:col-span-3 flex items-center gap-2">
+                    <div className="relative flex-grow">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-ink-soft/60" />
+                        <input type="text" placeholder="搜尋姓名、學號、信箱..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                            aria-label="搜尋使用者"
+                            className="w-full pl-11 pr-4 py-3 bg-surface border border-line-strong rounded-lg shadow-sm transition-all duration-300
+                                focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/30" />
+                    </div>
+
+                    {/* --- 群發信件 Dropdown --- */}
+                    <div className="relative group bulk-email-dropdown">
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsBulkDropdownOpen(!isBulkDropdownOpen);
+                            }}
+                            className={`${buttonStyles.notifyAll} w-full md:w-auto`}
+                            aria-label="群發信件選項"
+                            title="群發信件選項"
+                        >
+                            <Mail size={16} aria-hidden="true" />
+                            <span className="hidden sm:inline whitespace-nowrap">群發信件</span>
+                            <ChevronDown size={14} className={`transition-transform duration-200 ${isBulkDropdownOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        <div className={`absolute right-0 top-full mt-2 w-48 bg-surface rounded-xl shadow-xl border border-line overflow-hidden z-20 transition-all duration-200 origin-top-right transform
+                            ${isBulkDropdownOpen ? 'opacity-100 scale-100 visible' : 'opacity-0 scale-95 invisible group-hover:opacity-100 group-hover:scale-100 group-hover:visible'}
+                            md:invisible md:group-hover:visible md:group-hover:opacity-100 md:group-hover:scale-100
+                        `}>
+                            <div className="py-1">
+                                <button onClick={() => openNotificationModal(null, 'all')} className="w-full text-left px-4 py-3 text-sm text-ink hover:bg-ok/10 hover:text-ok flex items-center gap-2 transition-colors">
+                                    <Users size={14} aria-hidden="true" /> 寄送給所有人
+                                </button>
+                                <button onClick={() => openNotificationModal(null, 'user')} className="w-full text-left px-4 py-3 text-sm text-ink hover:bg-ok/10 hover:text-ok flex items-center gap-2 transition-colors">
+                                    <UserCheck size={14} aria-hidden="true" /> 寄送給使用者
+                                </button>
+                                <button onClick={() => openNotificationModal(null, 'admin')} className="w-full text-left px-4 py-3 text-sm text-ink hover:bg-ok/10 hover:text-ok flex items-center gap-2 transition-colors">
+                                    <Shield size={14} aria-hidden="true" /> 寄送給管理員
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                <div className="lg:col-span-2 grid grid-cols-3 bg-surface rounded-xl border border-line/80 shadow-sm overflow-hidden h-[76px]">
+                    <button 
+                        onClick={() => handleRoleFilterChange('')}
+                        aria-label={`顯示所有使用者，共 ${stats.total} 位`}
+                        className={`flex flex-col items-center justify-center transition-all duration-300 ${roleFilter === '' ? 'bg-primary-tint ring-1 ring-inset ring-primary/25' : 'hover:bg-surface-hover'}`}
+                    >
+                        <h3 className={`text-xs font-medium flex items-center gap-1.5 ${roleFilter === '' ? 'text-primary' : 'text-ink-soft'}`}>
+                            <Users size={14} aria-hidden="true" />總用戶數
+                        </h3>
+                        <p className={`text-xl font-bold mt-0.5 ${roleFilter === '' ? 'text-primary' : 'text-ink'}`}>{stats.total}</p>
+                    </button>
+                    
+                    <button 
+                        onClick={() => handleRoleFilterChange('admin')}
+                        aria-label={`僅顯示管理員，共 ${stats.admins} 位`}
+                        className={`flex flex-col items-center justify-center border-l border-line transition-all duration-300 ${roleFilter === 'admin' ? 'bg-primary-tint ring-1 ring-inset ring-blue-200/50' : 'hover:bg-surface-hover'}`}
+                    >
+                        <h3 className={`text-xs font-medium flex items-center gap-1.5 ${roleFilter === 'admin' ? 'text-primary' : 'text-ink-soft'}`}>
+                            <Shield size={14} aria-hidden="true" />管理員
+                        </h3>
+                        <p className={`text-xl font-bold mt-0.5 ${roleFilter === 'admin' ? 'text-primary' : 'text-primary'}`}>{stats.admins}</p>
+                    </button>
+                    
+                    <button 
+                        onClick={() => handleRoleFilterChange('user')}
+                        aria-label={`僅顯示使用者，共 ${stats.users} 位`}
+                        className={`flex flex-col items-center justify-center border-l border-line transition-all duration-300 ${roleFilter === 'user' ? 'bg-ok/10 ring-1 ring-inset ring-emerald-200/50' : 'hover:bg-surface-hover'}`}
+                    >
+                        <h3 className={`text-xs font-medium flex items-center gap-1.5 ${roleFilter === 'user' ? 'text-ok' : 'text-ink-soft'}`}>
+                            <UserCheck size={14} aria-hidden="true" />使用者
+                        </h3>
+                        <p className={`text-xl font-bold mt-0.5 ${roleFilter === 'user' ? 'text-ok' : 'text-ink-soft'}`}>{stats.users}</p>
+                    </button>
+                </div>
+            </div>
+
+            <div className="rounded-xl w-full bg-surface shadow-lg overflow-hidden border border-line/80">
+                <div className="hidden md:block">
+                    <table className="w-full text-sm">
+                        <thead className="bg-page/70 text-left"><tr>
+                            <th className="p-4 px-6 font-semibold text-ink-soft">學號</th><th className="p-4 px-6 font-semibold text-ink-soft">姓名</th><th className="p-4 px-6 font-semibold text-ink-soft">電子信箱</th><th className="p-4 px-6 font-semibold text-ink-soft">權限</th><th className="p-4 px-6 font-semibold text-ink-soft text-center">操作</th>
+                        </tr></thead>
+                        <tbody className="divide-y divide-line">
+                            {loading ? (<tr><td colSpan="5" className="text-center p-12"><Loader2 className="h-6 w-6 animate-spin mx-auto" aria-label="載入中" /></td></tr>) : users.length === 0 ? (<tr><td colSpan="5" className="text-center p-12 text-ink-soft">找不到符合條件的使用者。</td></tr>) : (
+                                users.map((user) => (
+                                    <tr key={user.id} className="group table-row-modern border-b border-line last:border-0">
+                                        <td className="p-4 px-6 font-mono">{user.studentId || '-'}</td>
+                                        <td className="p-4 px-6 font-medium text-ink">
+                                            <div className="flex items-center">
+                                                {user.isGoogle && <span title="透過 Google 註冊" className="mr-1.5"><GoogleIcon /></span>}
+                                                {user.name || '-'}
+                                            </div>
+                                        </td>
+                                        <td className="p-4 px-6 text-ink-soft" title={user.emailFull}>{user.email}</td>
+                                        <td className="p-4 px-6"><span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${user.role === 'admin' ? 'bg-primary-tint text-primary' : 'bg-page text-ink'}`}>{user.role === 'admin' ? '管理員' : '使用者'}</span></td>
+                                        <td className="p-4 px-6">
+                                            <div className="flex items-center justify-center gap-2 transition-all duration-300">
+                                                <button onClick={() => handleRoleChange(user)} aria-label={`將 ${user.name} ${user.role === 'admin' ? '設為使用者' : '設為管理員'}`} className={user.role === 'admin' ? buttonStyles.demote : buttonStyles.promote} disabled={currentUser?.id === user.id}>{user.role === 'admin' ? '設為使用者' : '設為管理員'}</button>
+                                                <button onClick={() => openNotificationModal(user)} aria-label={`向 ${user.name} 寄送通知`} className={buttonStyles.notify} title="寄送通知"><Mail size={15} /></button>
+                                                <button onClick={() => handleDeleteUser(user)} aria-label={`刪除使用者 ${user.name}`} className={buttonStyles.delete} title="刪除帳號" disabled={currentUser?.id === user.id || isDeletingId === user.id}>
+                                                    {isDeletingId === user.id ? <Loader2 className="animate-spin h-4 w-4" /> : <Trash2 size={16} aria-hidden="true" />}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="md:hidden divide-y divide-line/50">
+                    {loading ? (<div className="text-center p-8"><Loader2 className="h-6 w-6 animate-spin mx-auto" aria-label="載入中" /></div>) : users.length === 0 ? (<div className="text-center p-8 text-ink-soft">找不到符合條件的使用者。</div>) : (
+                        users.map(user => (
+                            <div key={user.id} className="p-5 space-y-4 hover:bg-surface-hover transition-colors">
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-inner ${user.role === 'admin' ? 'bg-primary-tint text-primary' : 'bg-primary-tint text-primary'}`} aria-hidden="true">
+                                            {user.name ? user.name[0] : '?'}
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-ink flex items-center gap-1.5">
+                                                {user.isGoogle && <GoogleIcon />}
+                                                {user.name || '未命名'}
+                                            </h3>
+                                            <p className="text-[11px] font-mono text-ink-soft/60 tracking-tighter uppercase">{user.studentId || 'NO ID'}</p>
+                                        </div>
+                                    </div>
+                                    <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider ${user.role === 'admin' ? 'bg-primary-tint text-primary border border-primary/20' : 'bg-page text-ink-soft border border-line'}`}>
+                                        {user.role === 'admin' ? '管理員' : '使用者'}
+                                    </span>
+                                </div>
+                                
+                                <div className="bg-page/50 rounded-lg p-3 space-y-1.5">
+                                    <div className="flex items-center gap-2 text-xs text-ink-soft">
+                                        <Mail size={12} className="text-ink-soft/60" aria-hidden="true" />
+                                        <span className="truncate" title={user.emailFull}>{user.email}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between pt-1">
+                                    <button 
+                                        onClick={() => handleRoleChange(user)} 
+                                        aria-label={`將 ${user.name} ${user.role === 'admin' ? '設為使用者' : '設為管理員'}`}
+                                        className={`text-xs font-bold px-4 py-2 rounded-lg border transition-colors ${user.role === 'admin' ? 'border-warn/40 text-warn bg-warn/5 hover:bg-warn/10' : 'border-primary/40 text-primary bg-primary-tint/50 hover:bg-primary-tint'}`}
+                                        disabled={currentUser?.id === user.id}
+                                    >
+                                        {user.role === 'admin' ? '設為使用者' : '設為管理員'}
+                                    </button>
+                                    
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => openNotificationModal(user)} aria-label={`向 ${user.name} 寄送通知`} className="p-2.5 bg-sky-50 text-sky-600 rounded-lg hover:bg-sky-100 transition-colors" title="寄送通知">
+                                            <Mail size={15} />
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDeleteUser(user)} 
+                                            aria-label={`刪除使用者 ${user.name}`}
+                                            className="p-2.5 bg-danger/10 text-danger rounded-lg hover:bg-danger/10 transition-colors" 
+                                            title="刪除帳號" 
+                                            disabled={currentUser?.id === user.id || isDeletingId === user.id}
+                                        >
+                                            {isDeletingId === user.id ? <Loader2 className="animate-spin h-4 w-4" /> : <Trash2 size={18} aria-hidden="true" />}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="text-sm text-ink-soft font-medium">共 {totalCount} 筆資料，第 {currentPage} / {totalPages || 1} 頁</div>
+                <div className="flex items-center gap-2">
+                    <div className="relative">
+                        <select
+                            value={rowsPerPage}
+                            onChange={e => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                            aria-label="每頁顯示人數"
+                            className="appearance-none w-full bg-surface border border-line-strong rounded-lg py-2 pl-4 pr-10 text-sm shadow-sm
+                                transition-all duration-300
+                                focus:outline-none focus:border-primary
+                                focus:ring-4 focus:ring-primary/30"
+                        >
+                            {[10, 25, 50].map(v => <option key={v} value={v}>{v} 位 / 頁</option>)}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-ink-soft/60">
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </div>
+                    </div>
+                    <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="分頁導覽">
+                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} aria-label="第一頁" className="relative inline-flex items-center rounded-l-md px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronsLeft className="h-5 w-5" aria-hidden="true" /></button>
+                        <button onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1} aria-label="上一頁" className="relative inline-flex items-center px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronLeft className="h-5 w-5" aria-hidden="true" /></button>
+                        <button onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages || totalPages === 0} aria-label="下一頁" className="relative inline-flex items-center px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronRight className="h-5 w-5" aria-hidden="true" /></button>
+                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages || totalPages === 0} aria-label="最後一頁" className="relative inline-flex items-center rounded-r-md px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronsRight className="h-5 w-5" aria-hidden="true" /></button>
+                    </nav>
+                </div>
+            </div>
+
+            <SendNotificationModal
+                isOpen={isNotificationModalOpen}
+                onClose={() => setIsNotificationModalOpen(false)}
+                user={notificationUser}
+                onConfirm={handleSendNotification}
+                isSending={isSending}
+                targetCount={bulkTargetInfo.count}
+                targetLabel={bulkTargetInfo.label}
+            />
+            <ConfirmByTypingModal
+                isOpen={!!deletingUser}
+                title="永久刪除使用者"
+                description={`即將永久刪除「${deletingUser?.name || ''}」，該使用者的個人資料、對話紀錄與訂閱將全部移除。`}
+                keyword={deletingUser?.name || ''}
+                confirmLabel="永久刪除"
+                isBusy={!!isDeletingId}
+                onConfirm={executeDeleteUser}
+                onClose={() => setDeletingUser(null)}
+            />
+            <Toast show={toast.show} message={toast.message} type={toast.type} onClose={hideToast} />
+        </div>
+    );
+}

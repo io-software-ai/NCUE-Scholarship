@@ -1,0 +1,673 @@
+'use client';
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { authFetch } from '@/lib/authFetch';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import {
+    Download, Trash2, AlertTriangle, Activity, LayoutList,
+    FileDown, Search, ArrowUp, ArrowDown, ChevronsUpDown,
+    ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Loader2,
+    Calendar, TrendingUp, Eye, CheckSquare
+} from 'lucide-react';
+import Toast from '@/components/ui/Toast';
+import { motion, AnimatePresence } from 'framer-motion';
+import SimpleLineChart from '@/components/ui/SimpleLineChart';
+
+const StatCard = ({ title, value, icon: Icon, color = "indigo", subtext }) => {
+    const colorStyles = {
+        indigo: "bg-primary-tint text-primary border-primary/30",
+        rose: "bg-rose-50 text-rose-600 border-rose-200",
+        emerald: "bg-ok/10 text-ok border-ok/30",
+        amber: "bg-warn/10 text-warn border-warn/30",
+    };
+    const style = colorStyles[color] || colorStyles.indigo;
+
+    return (
+        <div className="bg-surface rounded-xl p-6 border border-line/80 shadow-sm flex items-start gap-4 transition-all duration-300 hover:shadow-md h-full select-none">
+            <div className={`p-3 rounded-lg ${style} bg-opacity-50`}>
+                <Icon className="w-6 h-6" />
+            </div>
+            <div>
+                <p className="text-sm font-medium text-ink-soft">{title}</p>
+                <h3 className="text-2xl font-bold text-ink mt-1">{value}</h3>
+                {subtext && <p className="text-xs text-ink-soft/60 mt-1">{subtext}</p>}
+            </div>
+        </div>
+    );
+};
+
+export default function ExportAndStatisticsTab() {
+    const confirm = useConfirm();
+    const [loading, setLoading] = useState(true);
+    const [processing, setProcessing] = useState(false);
+    const [stats, setStats] = useState({ totalAnnouncements: 0, totalViews: 0, overdueCount: 0, chartData: [] });
+    const [announcements, setAnnouncements] = useState([]);
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filter, setFilter] = useState('all'); // all, overdue
+    const [chartGranularity, setChartGranularity] = useState('day'); // day, week, month
+
+    // Sorting & Pagination
+    const [sort, setSort] = useState({ column: 'created_at', direction: 'desc' });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+
+    const showToast = (message, type = 'success') => setToast({ show: true, message, type });
+    const hideToast = () => setToast(prev => ({ ...prev, show: false }));
+
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const statsRes = await authFetch('/api/admin/announcements/stats');
+            const statsData = await statsRes.json();
+            if (statsRes.ok) {
+                setStats(statsData);
+            }
+
+            const { data, error } = await supabase
+                .from('announcements')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            const twoYearsAgo = new Date();
+            twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+
+            const processed = data.map(item => {
+                const endDate = item.application_end_date ? new Date(item.application_end_date) : null;
+                const createdDate = new Date(item.created_at);
+                const isOverdue = endDate ? endDate < twoYearsAgo : createdDate < twoYearsAgo;
+                return { ...item, isOverdue };
+            });
+
+            setAnnouncements(processed);
+
+        } catch (error) {
+            console.error(error);
+            showToast('無法載入資料', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, filter]);
+
+    // Chart Data Aggregation
+    const aggregatedChartData = useMemo(() => {
+        const rawData = stats.chartData || [];
+        if (rawData.length === 0) return [];
+
+        if (chartGranularity === 'day') {
+            return rawData;
+        }
+
+        const aggregated = {};
+
+        rawData.forEach(({ date, count }) => {
+            const d = new Date(date);
+            let key;
+
+            if (chartGranularity === 'month') {
+                key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            } else if (chartGranularity === 'week') {
+                // Get Start of Week (Sunday)
+                const day = d.getDay();
+                const diff = d.getDate() - day; // adjust when day is sunday
+                const weekStart = new Date(d.setDate(diff));
+                key = weekStart.toISOString().split('T')[0]; // Use start date as key
+            }
+
+            aggregated[key] = (aggregated[key] || 0) + count;
+        });
+
+        return Object.entries(aggregated)
+            .map(([date, count]) => ({ date, count }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+    }, [stats.chartData, chartGranularity]);
+
+    // 熱門公告 Top 5（依累積瀏覽數）
+    const topViewed = useMemo(() =>
+        [...announcements]
+            .sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
+            .slice(0, 5),
+        [announcements]);
+
+
+    const handleSort = (column) => {
+        setSort(prev => ({
+            column,
+            direction: prev.column === column && prev.direction === 'desc' ? 'asc' : 'desc'
+        }));
+        setCurrentPage(1);
+    };
+
+    const renderSortIcon = (column) => {
+        if (sort.column !== column) return <ChevronsUpDown className="h-4 w-4 ml-1 text-ink-soft/60" />;
+        return sort.direction === 'asc' ? <ArrowUp className="h-4 w-4 ml-1 text-primary" /> : <ArrowDown className="h-4 w-4 ml-1 text-primary" />;
+    };
+
+    const processedAnnouncements = useMemo(() => {
+        let result = [...announcements];
+
+        if (searchTerm) {
+            const lower = searchTerm.toLowerCase();
+            result = result.filter(a => a.title.toLowerCase().includes(lower) || (a.category && a.category.toLowerCase().includes(lower)));
+        }
+        if (filter === 'overdue') {
+            result = result.filter(a => a.isOverdue);
+        }
+
+        result.sort((a, b) => {
+            // 1. Primary Sort: Overdue always on top
+            if (a.isOverdue !== b.isOverdue) {
+                return a.isOverdue ? -1 : 1;
+            }
+
+            // 2. Secondary Sort: User Selection
+            const aVal = a[sort.column];
+            const bVal = b[sort.column];
+
+            if (aVal === bVal) return 0;
+            if (aVal === null || aVal === undefined) return 1;
+            if (bVal === null || bVal === undefined) return -1;
+
+            if (sort.column === 'view_count') {
+                return sort.direction === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+
+            if (sort.column === 'application_end_date' || sort.column === 'created_at') {
+                return sort.direction === 'asc'
+                    ? new Date(aVal) - new Date(bVal)
+                    : new Date(bVal) - new Date(aVal);
+            }
+
+            return sort.direction === 'asc'
+                ? String(aVal).localeCompare(String(bVal))
+                : String(bVal).localeCompare(String(aVal));
+        });
+
+        return result;
+    }, [announcements, searchTerm, filter, sort]);
+
+    const paginatedAnnouncements = useMemo(() => {
+        const startIndex = (currentPage - 1) * rowsPerPage;
+        return processedAnnouncements.slice(startIndex, startIndex + rowsPerPage);
+    }, [processedAnnouncements, currentPage, rowsPerPage]);
+
+    const totalPages = Math.ceil(processedAnnouncements.length / rowsPerPage);
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedIds(new Set(processedAnnouncements.map(a => a.id)));
+        } else {
+            setSelectedIds(new Set());
+        }
+    };
+
+    const handleSelectOne = (id) => {
+        const newSet = new Set(selectedIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedIds(newSet);
+    };
+
+    const handleExport = (idsToExport = null) => {
+        const targetIds = idsToExport ? (Array.isArray(idsToExport) ? idsToExport : [idsToExport]) : Array.from(selectedIds);
+        if (targetIds.length === 0) return showToast('請先選擇要匯出的公告', 'info');
+
+        const items = announcements.filter(a => targetIds.includes(a.id));
+
+        const headers = [
+            'Title', 'Summary', 'Target Audience', 'Category',
+            'Application Start Date', 'Application End Date',
+            'Application Limitations', 'Submission Method',
+            'External URLs', 'Created At', 'View Count'
+        ];
+
+        const csvContent = [
+            headers.join(','),
+            ...items.map(item => [
+                `"${(item.title || '').replace(/"/g, '""')}"`, 
+                `"${(item.summary || '').replace(/"/g, '""')}"`, 
+                `"${(item.target_audience || '').replace(/"/g, '""')}"`,
+                `"${(item.category || '').replace(/"/g, '""')}"`, 
+                item.application_start_date || '',
+                item.application_end_date || '',
+                `"${(item.application_limitations || '').replace(/"/g, '""')}"`,
+                `"${(item.submission_method || '').replace(/"/g, '""')}"`,
+                `"${(item.external_urls || '').replace(/"/g, '""')}"`,
+                item.created_at || '',
+                item.view_count || 0
+            ].join(','))
+        ].join('\n');
+
+        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `announcements_export_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast(`已匯出 ${targetIds.length} 筆公告`, 'success');
+    };
+
+    const handleDelete = async (idsToDelete = null) => {
+        const targetIds = idsToDelete ? (Array.isArray(idsToDelete) ? idsToDelete : [idsToDelete]) : Array.from(selectedIds);
+        if (targetIds.length === 0) return showToast('請先選擇要刪除的公告', 'info');
+
+        if (!(await confirm({ title: `刪除 ${targetIds.length} 筆公告`, message: '此操作無法復原，並將一併刪除相關附件與瀏覽紀錄。', variant: 'danger', confirmLabel: '永久刪除' }))) return;
+
+        setProcessing(true);
+        try {
+            const res = await authFetch('/api/admin/announcements/batch-delete', {
+                method: 'POST',
+                body: JSON.stringify({ ids: targetIds })
+            });
+
+            if (res.ok) {
+                showToast(`成功刪除 ${targetIds.length} 筆公告`, 'success');
+                setSelectedIds(new Set());
+                fetchData();
+            } else {
+                throw new Error('刪除失敗');
+            }
+        } catch (err) {
+            showToast('刪除失敗，請稍後再試', 'error');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    const handleExportAndDelete = async () => {
+        if (selectedIds.size === 0) return showToast('請先選擇公告', 'info');
+        handleExport();
+        setTimeout(() => {
+            handleDelete();
+        }, 1000);
+    };
+
+    return (
+        <div className="space-y-8 select-none">
+            {/* Top Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <StatCard
+                    title="總公告數"
+                    value={stats.totalAnnouncements}
+                    icon={LayoutList}
+                    color="indigo"
+                />
+                <StatCard
+                    title="總瀏覽次數"
+                    value={stats.totalViews.toLocaleString()}
+                    icon={Activity}
+                    color="emerald"
+                />
+                <StatCard
+                    title="逾期公告 (>2年)"
+                    value={stats.overdueCount}
+                    icon={AlertTriangle}
+                    color="rose"
+                    subtext="建議匯出並刪除"
+                />
+            </div>
+
+            {/* Chart Section */}
+            <div className="bg-surface rounded-2xl p-4 sm:p-8 border border-line shadow-sm">
+                <div className="flex flex-col sm:flex-row justify-between items-center mb-6 sm:mb-8 gap-4">
+                    <div className="flex items-center gap-3 select-none w-full sm:w-auto">
+                        <div className="p-2 bg-primary-tint text-primary rounded-xl">
+                            <TrendingUp className="w-5 h-5" />
+                        </div>
+                        <h3 className="text-lg font-bold text-ink">瀏覽數趨勢</h3>
+                    </div>
+
+                    <div className="flex bg-page p-1 rounded-xl select-none w-full sm:w-auto">
+                        <button
+                            onClick={() => setChartGranularity('day')}
+                            className={`flex-1 sm:flex-none px-4 sm:px-6 py-1.5 text-xs font-bold rounded-lg transition-all ${chartGranularity === 'day' ? 'bg-surface text-primary shadow-sm' : 'text-ink-soft hover:text-ink'}`}
+                        >
+                            日
+                        </button>
+                        <button
+                            onClick={() => setChartGranularity('week')}
+                            className={`flex-1 sm:flex-none px-4 sm:px-6 py-1.5 text-xs font-bold rounded-lg transition-all ${chartGranularity === 'week' ? 'bg-surface text-primary shadow-sm' : 'text-ink-soft hover:text-ink'}`}
+                        >
+                            週
+                        </button>
+                        <button
+                            onClick={() => setChartGranularity('month')}
+                            className={`flex-1 sm:flex-none px-4 sm:px-6 py-1.5 text-xs font-bold rounded-lg transition-all ${chartGranularity === 'month' ? 'bg-surface text-primary shadow-sm' : 'text-ink-soft hover:text-ink'}`}
+                        >
+                            月
+                        </button>
+                    </div>
+                </div>
+                <div className="w-full overflow-hidden">
+                    <SimpleLineChart data={aggregatedChartData} height={250} />
+                </div>
+            </div>
+
+            {/* 熱門公告 Top 5 */}
+            <div className="bg-surface rounded-2xl p-4 sm:p-8 border border-line shadow-sm">
+                <div className="flex items-center gap-3 mb-6 select-none">
+                    <div className="p-2 bg-warn/10 text-warn rounded-xl">
+                        <Eye className="w-5 h-5" />
+                    </div>
+                    <h3 className="text-lg font-bold text-ink">熱門公告 Top 5</h3>
+                    <span className="text-xs text-ink-soft">依累積瀏覽數</span>
+                </div>
+                {topViewed.length === 0 ? (
+                    <p className="text-sm text-ink-soft py-4 text-center">尚無公告資料</p>
+                ) : (
+                    <ol className="space-y-2.5">
+                        {topViewed.map((ann, i) => {
+                            const maxViews = topViewed[0]?.view_count || 1;
+                            return (
+                                <li key={ann.id}>
+                                    <a
+                                        href={`/?announcement_id=${ann.id}`}
+                                        target="_blank" rel="noopener noreferrer"
+                                        className="group flex items-center gap-3 p-3 rounded-xl border border-line hover:border-primary/40 hover:bg-primary-tint/30 transition-colors duration-150"
+                                    >
+                                        <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 tabular-nums ${i === 0 ? 'bg-primary text-white dark:text-[#10151B]' : 'bg-page text-ink-soft'}`}>
+                                            {i + 1}
+                                        </span>
+                                        <span className="flex-1 min-w-0">
+                                            <span className="block text-sm font-medium text-ink truncate group-hover:text-primary transition-colors">{ann.title}</span>
+                                            <span className="block mt-1.5 h-1 rounded-full bg-page overflow-hidden">
+                                                <span
+                                                    className="block h-full rounded-full bg-primary/60"
+                                                    style={{ width: `${Math.max(6, Math.round(((ann.view_count || 0) / maxViews) * 100))}%` }}
+                                                />
+                                            </span>
+                                        </span>
+                                        <span className="flex items-center gap-1 text-sm text-ink-soft tabular-nums flex-shrink-0">
+                                            <Eye size={14} aria-hidden="true" />
+                                            {(ann.view_count || 0).toLocaleString()}
+                                        </span>
+                                    </a>
+                                </li>
+                            );
+                        })}
+                    </ol>
+                )}
+            </div>
+
+            {/* Toolbar */}
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-surface p-4 rounded-xl border border-line/80 shadow-sm">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="relative flex-grow sm:flex-grow-0">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-soft/60" />
+                        <input
+                            type="text"
+                            placeholder="搜尋公告..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-9 pr-4 py-2 text-sm border border-line-strong rounded-lg w-full sm:w-64 transition-all duration-200
+                                focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/20"
+                        />
+                    </div>
+                    <select
+                        value={filter}
+                        onChange={(e) => setFilter(e.target.value)}
+                        aria-label="篩選公告狀態"
+                        className="py-2 pl-3 pr-8 text-sm border border-line-strong rounded-lg transition-all duration-200
+                            focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/20"
+                    >
+                        <option value="all">所有公告</option>
+                        <option value="overdue">僅顯示逾期</option>
+                    </select>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                    {selectedIds.size > 0 && (
+                        <>
+                            <button
+                                onClick={() => handleExport()}
+                                disabled={processing}
+                                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary bg-primary-tint hover:bg-primary-tint rounded-lg transition-colors"
+                            >
+                                <Download className="w-4 h-4" />
+                                匯出 ({selectedIds.size})
+                            </button>
+                            <button
+                                onClick={() => handleDelete()}
+                                disabled={processing}
+                                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-danger bg-danger/10 hover:bg-danger/20 rounded-lg transition-colors"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                                刪除 ({selectedIds.size})
+                            </button>
+                            <button
+                                onClick={handleExportAndDelete}
+                                disabled={processing}
+                                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-hover rounded-lg transition-colors shadow-sm"
+                            >
+                                <FileDown className="w-4 h-4" />
+                                匯出並刪除
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Table */}
+            <div className="bg-surface rounded-xl border border-line/80 shadow-sm overflow-hidden">
+                {/* Desktop View */}
+                <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-page/70 text-ink-soft font-medium">
+                            <tr>
+                                <th className="p-4 w-12 text-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={paginatedAnnouncements.length > 0 && Array.from(selectedIds).filter(id => paginatedAnnouncements.some(a => a.id === id)).length === paginatedAnnouncements.length}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                const newSet = new Set(selectedIds);
+                                                paginatedAnnouncements.forEach(a => newSet.add(a.id));
+                                                setSelectedIds(newSet);
+                                            } else {
+                                                const newSet = new Set(selectedIds);
+                                                paginatedAnnouncements.forEach(a => newSet.delete(a.id));
+                                                setSelectedIds(newSet);
+                                            }
+                                        }}
+                                        className="rounded border-line-strong text-primary focus:ring-primary"
+                                    />
+                                </th>
+                                <th className="p-4 cursor-pointer hover:bg-surface-hover transition-colors" onClick={() => handleSort('title')}> 
+                                    <div className="flex items-center">標題 {renderSortIcon('title')}</div>
+                                </th>
+                                <th className="p-4 w-36 cursor-pointer hover:bg-surface-hover transition-colors" onClick={() => handleSort('application_end_date')}> 
+                                    <div className="flex items-center">截止日期 {renderSortIcon('application_end_date')}</div>
+                                </th>
+                                <th className="p-4 w-28 text-center cursor-pointer hover:bg-surface-hover transition-colors" onClick={() => handleSort('view_count')}> 
+                                    <div className="flex items-center justify-center">瀏覽數 {renderSortIcon('view_count')}</div>
+                                </th>
+                                <th className="p-4 w-28 text-center cursor-pointer hover:bg-surface-hover transition-colors" onClick={() => handleSort('is_active')}> 
+                                    <div className="flex items-center justify-center">狀態 {renderSortIcon('is_active')}</div>
+                                </th>
+                                <th className="p-4 w-32 text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                            {loading ? (
+                                <tr><td colSpan="6" className="p-12 text-center text-ink-soft"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2"/>載入中...</td></tr>
+                            ) : paginatedAnnouncements.length === 0 ? (
+                                <tr><td colSpan="6" className="p-12 text-center text-ink-soft">無資料</td></tr>
+                            ) : (
+                                paginatedAnnouncements.map(ann => (
+                                    <tr 
+                                        key={ann.id} 
+                                        className={`
+                                            group transition-all duration-300 ease-out border-b border-line last:border-0 relative
+                                            ${ann.isOverdue 
+                                                ? 'bg-danger/5 hover:bg-danger/10 transition-colors duration-150' 
+                                                : 'table-row-modern'
+                                            }
+                                        `}
+                                    >
+                                        <td className="p-4 text-center">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedIds.has(ann.id)}
+                                                onChange={() => handleSelectOne(ann.id)}
+                                                className="rounded border-line-strong text-primary focus:ring-primarycursor-pointer"
+                                            />
+                                        </td>
+                                        <td className="p-4">
+                                            <a 
+                                                href={`/?announcement_id=${ann.id}`} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="font-medium text-ink line-clamp-1 transition-colors hover:text-primary hover:underline cursor-pointer" 
+                                                title={ann.title}
+                                            >
+                                                {ann.title}
+                                            </a>
+                                            {ann.isOverdue && <span className="inline-flex items-center text-xs font-semibold text-rose-600 mt-1"><AlertTriangle className="w-3 h-3 mr-1 animate-pulse"/>已逾期 &gt; 2年</span>}
+                                        </td>
+                                        <td className="p-4 text-ink-soft whitespace-nowrap">
+                                            {ann.application_end_date ? new Date(ann.application_end_date).toLocaleDateString('en-CA') : <span className="text-warn">未設定</span>}
+                                        </td>
+                                        <td className="p-4 text-center font-mono text-ink-soft group-hover:text-primary transition-colors font-bold">{ann.view_count}</td>
+                                        <td className="p-4 text-center">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium transition-all duration-300 ${ann.is_active ? 'bg-ok/10 text-ok group-hover:bg-ok/20' : 'bg-page text-ink-soft group-hover:bg-surface-hover'}`}>
+                                                {ann.is_active ? '上架' : '下架'}
+                                            </span>
+                                        </td>
+                                        <td className="p-4 text-center">
+                                            <div className="flex items-center justify-center gap-3 opacity-60 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
+                                                <button 
+                                                    onClick={() => handleExport(ann.id)}
+                                                    className="p-2 text-primary bg-primary-tint/50 hover:bg-primary hover:text-white dark:hover:text-[#10151B] rounded-lg transition-colors duration-150 active:scale-95"
+                                                    title="單筆匯出"
+                                                >
+                                                    <Download className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleDelete(ann.id)}
+                                                    className="p-2 text-danger bg-danger/10 hover:bg-danger hover:text-white dark:hover:text-[#10151B] rounded-lg transition-colors duration-150 active:scale-95"
+                                                    title="刪除"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Mobile View */}
+                <div className="md:hidden px-2 py-4 flex flex-col gap-3">
+                    {loading ? (
+                        <div className="text-center p-8 text-ink-soft">載入中...</div>
+                    ) : paginatedAnnouncements.length === 0 ? (
+                        <div className="text-center p-8 text-ink-soft">無資料</div>
+                    ) : (
+                        paginatedAnnouncements.map(ann => (
+                            <div 
+                                key={ann.id}
+                                className={`bg-surface rounded-lg shadow-md border p-4 space-y-3 transition-all duration-300 relative overflow-hidden
+                                    ${ann.isOverdue 
+                                        ? 'border-danger/30 bg-danger/5 hover:bg-danger/10 transition-colors duration-150' 
+                                        : 'border-line/80 table-row-modern'
+                                    } hover:-translate-y-1 hover:z-10 group
+                                `}
+                            >
+                                <div className="flex justify-between items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedIds.has(ann.id)}
+                                                onChange={() => handleSelectOne(ann.id)}
+                                                className="rounded border-line-strong text-primary focus:ring-primary cursor-pointer h-4 w-4 flex-shrink-0"
+                                            />
+                                            <a href={`/?announcement_id=${ann.id}`} target="_blank" rel="noopener noreferrer" className="truncate flex-1">
+                                                <h3 className="font-bold text-ink truncate group-hover:text-primary transition-colors hover:underline">{ann.title}</h3>
+                                            </a>
+                                        </div>
+                                        {ann.isOverdue && <div className="flex items-center text-xs font-semibold text-rose-600 ml-6"><AlertTriangle className="w-3 h-3 mr-1 animate-pulse"/>已逾期 &gt; 2年</div>}
+                                    </div>
+                                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full flex-shrink-0 ${ann.is_active ? 'bg-ok/10 text-ok group-hover:bg-ok/20' : 'bg-page text-ink group-hover:bg-surface-hover'}`}>
+                                        {ann.is_active ? '上架' : '下架'}
+                                    </span>
+                                </div>
+
+                                <div className="ml-6 grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-ink-soft">
+                                    <div><span className="font-medium text-ink-soft">分類:</span> {ann.category}</div>
+                                    <div className="flex items-center gap-1"><Eye className="w-3 h-3" /> <span className="font-mono font-bold group-hover:text-primary">{ann.view_count}</span></div>
+                                    <div className="col-span-2"><span className="font-medium text-ink-soft">截止:</span> {ann.application_end_date ? new Date(ann.application_end_date).toLocaleDateString('en-CA') : <span className="text-warn">未設定</span>}</div>
+                                </div>
+
+                                <div className="flex justify-end gap-3 pt-2 border-t border-line mt-2">
+                                    <button 
+                                        onClick={() => handleExport(ann.id)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary-tint/50 hover:bg-primary hover:text-white dark:hover:text-[#10151B] rounded-lg transition-colors duration-150 active:scale-95"
+                                    >
+                                        <Download className="w-3.5 h-3.5" /> 匯出
+                                    </button>
+                                    <button 
+                                        onClick={() => handleDelete(ann.id)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-danger bg-danger/10 hover:bg-danger hover:text-white dark:hover:text-[#10151B] rounded-lg transition-colors duration-150 active:scale-95"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" /> 刪除
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            {/* Pagination */}
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="text-sm text-ink-soft">共 {processedAnnouncements.length} 筆資料，第 {currentPage} / {totalPages || 1} 頁</div>
+                <div className="flex items-center gap-2">
+                    <div className="relative">
+                        <select
+                            value={rowsPerPage}
+                            onChange={e => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                            aria-label="每頁顯示筆數"
+                            className="appearance-none w-full bg-surface border border-line-strong rounded-lg py-2 pl-4 pr-10 text-sm shadow-sm
+                                transition-all duration-300
+                                focus:outline-none focus:border-primary
+                                focus:ring-4 focus:ring-primary/20"
+                        >
+                            {[10, 25, 50].map(v => <option key={v} value={v}>{v} 筆 / 頁</option>)}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-ink-soft/60">
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </div>
+                    </div>
+                    <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="分頁導覽">
+                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} aria-label="第一頁" className="relative inline-flex items-center rounded-l-md px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronsLeft className="h-5 w-5" /></button>
+                        <button onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1} aria-label="上一頁" className="relative inline-flex items-center px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronLeft className="h-5 w-5" /></button>
+                        <button onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages || totalPages === 0} aria-label="下一頁" className="relative inline-flex items-center px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronRight className="h-5 w-5" /></button>
+                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages || totalPages === 0} aria-label="最後一頁" className="relative inline-flex items-center rounded-r-md px-2 py-2 text-ink-soft/60 ring-1 ring-inset ring-line hover:bg-surface-hover focus:z-20 disabled:opacity-50"><ChevronsRight className="h-5 w-5" /></button>
+                    </nav>
+                </div>
+            </div>
+
+            <Toast show={toast.show} message={toast.message} type={toast.type} onClose={hideToast} />
+        </div>
+    );
+}
