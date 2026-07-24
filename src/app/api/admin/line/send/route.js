@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
 import { verifyUserAuth, checkRateLimit, handleApiError, logSuccessAction } from '@/lib/apiMiddleware';
-import { pushMessage, buildAnnouncementLineText, buildAnnouncementFlex } from '@/lib/line';
+import { pushMessage, buildAnnouncementLineText } from '@/lib/line';
 
 /**
  * POST /api/admin/line/send
@@ -22,9 +22,8 @@ export async function POST(request) {
             return NextResponse.json({ error: '缺少 lineUserId 或訊息內容' }, { status: 400 });
         }
 
-        // 公告寄送：以 Flex 圖文卡片推播（與廣播一致）；聊天室紀錄存可讀文字快照
+        // 公告寄送：以純文字推播（與預覽一致）；聊天室紀錄存同一份可讀文字快照
         let messageText = text?.trim();
-        let outgoing = messageText;
         if (announcementId) {
             const { data: announcement, error: annError } = await supabaseServer
                 .from('announcements')
@@ -35,10 +34,9 @@ export async function POST(request) {
                 return NextResponse.json({ error: '找不到指定的公告' }, { status: 404 });
             }
             messageText = buildAnnouncementLineText(announcement, announcementId);
-            outgoing = buildAnnouncementFlex(announcement, announcementId);
         }
 
-        await pushMessage(lineUserId, outgoing);
+        await pushMessage(lineUserId, messageText);
 
         await supabaseServer.from('line_messages').insert({
             line_user_id: lineUserId,
