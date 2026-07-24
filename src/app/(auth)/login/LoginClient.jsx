@@ -125,8 +125,10 @@ function LoginContent() {
                     setGisReady(true);
                 }
 
-                // One Tap 浮層（頁面右上角的帳號選擇器）
-                window.google.accounts.id.prompt();
+                // 註：不呼叫 window.google.accounts.id.prompt()。
+                // One Tap 浮層在部分瀏覽器（未啟用 FedCM 時）會退回固定於右上角的 iframe，
+                // 於較窄視窗會被裁切、其「登入中…」狀態溢出版面（爆版）。
+                // 改為僅使用卡片內的官方按鈕（renderButton），登入流程完全相同。
             } catch (e) {
                 console.warn('GIS unavailable, falling back to redirect OAuth:', e?.message);
             }
