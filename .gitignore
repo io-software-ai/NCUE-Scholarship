@@ -1,42 +1,61 @@
-# dependencies
-/node_modules
+# ── dependencies (any workspace, recursive) ──
+node_modules/
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-*.log
-npm-debug.log*
-
-# env files
-.env.local
-
-# vercel
-.vercel
+# ── build output / caches (recursive) ──
+.next/
+out/
+build/
+dist/
+.expo/
+.turbo/
+web-build/
+*.tsbuildinfo
 
 # next.js type generation
 next-env.d.ts
+# expo/nativewind generated types (regenerated on start)
+nativewind-env.d.ts
+expo-env.d.ts
 
-# editors
+# ── native build artifacts ──
+apps/mobile/android/
+apps/mobile/ios/
+*.keystore
+*.jks
+# Firebase iOS config (add + commit manually if/when iOS is set up)
+GoogleService-Info.plist
+# 註：google-services.json 依決定「直接 commit」→ 不 ignore（EAS 雲端 build 需要它）
+# Google OAuth client downloads (never commit)
+client_secret*.json
+*.apps.googleusercontent.com.json
+
+# ── env files (keep *.template) ──
+.env
+.env.*
+!.env.template
+!.env.example
+
+# ── misc / os / editors ──
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+yarn-error.log*
+.vercel
 .vscode/
 .idea/
 
-# uploaded announcement attachments
+# ── agent / tooling scratch ──
+.claude/
+.artifacts/
+.idx/
+
+# ── uploaded announcement attachments (web) ──
+apps/web/public/storage/attachments/*
+!apps/web/public/storage/attachments/.gitkeep
 public/storage/attachments/*
 !public/storage/attachments/.gitkeep
 
-# backup directory
+# ── backups / local infra ──
 /backups/
-
-# DigiRunner configuration and H2 database data
 /digirunner/
-# Google Project IDX (deprecated dev environment)
-.idx/
