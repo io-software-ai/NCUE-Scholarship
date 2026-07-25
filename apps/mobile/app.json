@@ -1,0 +1,84 @@
+{
+  "expo": {
+    "name": "彰師獎學金",
+    "slug": "ncue-scholarship-app",
+    "version": "1.0.0",
+    "scheme": "ncue-scholarship",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#10151B",
+          "dark": {
+            "backgroundColor": "#10151B"
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#005A9C"
+        }
+      ],
+      "expo-quick-actions"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.ncuesa.scholarship",
+      "associatedDomains": [
+        "applinks:scholarship.ncuesa.org.tw"
+      ]
+    },
+    "android": {
+      "package": "org.ncuesa.scholarship",
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#005A9C"
+      },
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "POST_NOTIFICATIONS"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "scholarship.ncuesa.org.tw",
+              "pathPrefix": "/announcement"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "b6999a39-1600-484f-ad39-723a0aed79ae"
+      }
+    }
+  }
+}

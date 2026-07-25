@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * 語意色票 CSS 變數（NativeWind）— 對應 src/theme/colors.ts。
+ * NativeWind 會把 prefers-color-scheme 對映到「有效配色」，故系統與手動切換皆生效。
+ * 值為 "R G B" 三元組，搭配 tailwind.config 的 rgb(var(--x) / <alpha-value>)。
+ */
+:root {
+  --page: 246 248 250;
+  --surface: 255 255 255;
+  --surface-hover: 239 244 249;
+  --line: 227 232 238;
+  --line-strong: 126 139 153;
+  --ink: 28 43 58;
+  --ink-soft: 91 107 124;
+  --primary: 0 90 156;
+  --primary-tint: 232 241 248;
+  --ok: 15 122 82;
+  --warn: 180 83 9;
+  --danger: 180 35 24;
+  --ok-bright: 22 179 100;
+  --warn-bright: 247 144 9;
+  --danger-bright: 240 68 56;
+  --cat-a: 180 35 24;
+  --cat-b: 181 71 8;
+  --cat-c: 161 92 7;
+  --cat-d: 6 118 71;
+  --cat-e: 14 112 144;
+  --cat-f: 53 56 205;
+  --cat-g: 105 65 198;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: 16 21 27;
+    --surface: 23 30 38;
+    --surface-hover: 30 39 49;
+    --line: 42 53 66;
+    --line-strong: 87 104 120;
+    --ink: 231 236 242;
+    --ink-soft: 151 165 180;
+    --primary: 102 171 223;
+    --primary-tint: 27 44 60;
+    --ok: 75 193 148;
+    --warn: 224 162 91;
+    --danger: 238 139 128;
+    --ok-bright: 46 212 126;
+    --warn-bright: 253 176 34;
+    --danger-bright: 249 112 102;
+    --cat-a: 238 139 128;
+    --cat-b: 229 152 92;
+    --cat-c: 211 169 78;
+    --cat-d: 87 192 143;
+    --cat-e: 94 179 207;
+    --cat-f: 158 164 240;
+    --cat-g: 188 154 232;
+  }
+}
