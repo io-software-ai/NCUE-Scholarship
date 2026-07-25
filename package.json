@@ -7,6 +7,15 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "npm run dev -w @ncue/web",
+    "build": "npm run build -w @ncue/web",
+    "start": "npm run start -w @ncue/web",
+    "lint": "npm run lint -w @ncue/web",
+    "pm2:start": "pm2 start npm --name 'ncue-scholarship' -- run start",
+    "pm2:stop": "pm2 stop ncue-scholarship",
+    "pm2:restart": "pm2 restart ncue-scholarship",
+    "pm2:delete": "pm2 delete ncue-scholarship",
+    "pm2:logs": "pm2 logs ncue-scholarship",
     "web:dev": "npm run dev -w @ncue/web",
     "web:build": "npm run build -w @ncue/web",
     "mobile:dev": "npm run dev -w @ncue/mobile",
