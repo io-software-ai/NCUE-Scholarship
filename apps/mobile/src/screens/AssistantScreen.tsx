@@ -76,12 +76,18 @@ const uuid4 = () =>
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
 
-const SUGGESTIONS = [
+/**
+ * 歡迎頁預設問題：點擊只「帶入輸入框」不自動送出，使用者可再編輯後送出。
+ * hint 僅為卡片上的操作提示，不會被帶進輸入框。
+ */
+const SUGGESTIONS: { icon: any; text: string; hint?: string }[] = [
   { icon: Wallet, text: '有哪些清寒獎學金？' },
   { icon: CalendarClock, text: '這個月即將截止的有哪些？' },
   { icon: GraduationCap, text: '低收入戶可以申請什麼？' },
-  { icon: FileSearch, text: '幫我看看我的自傳怎麼改' },
+  { icon: FileSearch, text: '我想申請 xxx，請幫我修改並優化我的申請書', hint: '輸入 @ 選擇獎學金' },
 ];
+
+const INPUT_PLACEHOLDER = '輸入 @ 選擇公告或提問…';
 
 const RAINBOW = ['#4E8DF7', '#9B72F2', '#E96AC0', '#43BFA8'];
 const ALLOWED_MIME = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain'];
@@ -107,6 +113,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [inputBox, setInputBox] = useState<{ w: number; h: number } | null>(null);
   const listRef = useRef<FlatList<Msg>>(null);
+  const inputRef = useRef<TextInput>(null);
   const sessionIdRef = useRef(uuid4());
   const lastSendRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -154,6 +161,12 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
   }, [active]);
 
   const scrollEnd = useCallback(() => listRef.current?.scrollToEnd({ animated: true }), []);
+
+  // 預設問題：帶入輸入框並聚焦，讓使用者能先改寫（例如把 xxx 換成獎學金名稱）再送出
+  const fillInput = useCallback((text: string) => {
+    setInput(text);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
 
   // 輸入「@」→ 開公告選擇器（文件檢核模式，對齊網頁版）
   const onChangeInput = (t: string) => {
@@ -359,7 +372,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
           onContentSizeChange={scrollEnd}
           keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<WelcomePane name={session.user.user_metadata?.full_name} onPick={send} />}
+          ListEmptyComponent={<WelcomePane name={session.user.user_metadata?.full_name} onPick={fillInput} />}
         />
 
         {/* 懸浮輸入區 */}
@@ -392,7 +405,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
                 alignItems: 'center',
                 borderRadius: 28,
                 backgroundColor: theme.dark ? theme.colors.elevation.level2 : theme.colors.surface,
-                paddingLeft: 16,
+                paddingLeft: 10,
                 paddingRight: 8,
                 paddingVertical: 8,
                 shadowColor: '#0F2137',
@@ -405,24 +418,37 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
               <RoundIcon onPress={() => setPlusOpen(true)}>
                 <Plus size={21} color={theme.colors.onSurfaceVariant} />
               </RoundIcon>
-              <TextInput
-                placeholder="輸入 @ 選擇公告，或直接提問…"
-                placeholderTextColor={theme.colors.onSurfaceVariant}
-                value={input}
-                onChangeText={onChangeInput}
-                multiline
-                editable={!sending}
-                style={{
-                  flex: 1,
-                  color: theme.colors.onSurface,
-                  fontSize: 15.5,
-                  lineHeight: 21,
-                  maxHeight: 110,
-                  paddingTop: 8,
-                  paddingBottom: 8,
-                  paddingHorizontal: 6,
-                }}
-              />
+              {/* multiline TextInput 的原生 placeholder 會換行（窄螢幕變兩行）；
+                  改用單行 Text 疊層當 placeholder，過長時省略號截斷而非折行。 */}
+              <View style={{ flex: 1, justifyContent: 'center' }}>
+                <TextInput
+                  ref={inputRef}
+                  value={input}
+                  onChangeText={onChangeInput}
+                  multiline
+                  editable={!sending}
+                  style={{
+                    color: theme.colors.onSurface,
+                    fontSize: 15.5,
+                    lineHeight: 21,
+                    maxHeight: 110,
+                    paddingTop: 8,
+                    paddingBottom: 8,
+                    paddingHorizontal: 6,
+                  }}
+                />
+                {input.length === 0 ? (
+                  <View pointerEvents="none" style={[StyleSheet.absoluteFill, { justifyContent: 'center', paddingHorizontal: 6 }]}>
+                    <Text
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                      style={{ color: theme.colors.onSurfaceVariant, fontSize: 15.5, lineHeight: 21 }}
+                    >
+                      {INPUT_PLACEHOLDER}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <SendOrb active={hasInput} busy={sending} onPress={() => (sending ? stopGenerating() : send(input))} />
             </View>
 
@@ -867,12 +893,13 @@ function WelcomePane({ name, onPick }: { name?: string; onPick: (t: string) => v
       </Animated.View>
 
       <View className="flex-row flex-wrap" style={{ marginTop: 28, gap: 10 }}>
-        {SUGGESTIONS.map(({ icon: Icon, text }, i) => (
+        {SUGGESTIONS.map(({ icon: Icon, text, hint }, i) => (
           <Animated.View key={text} entering={enterUp(150 + i * 80)} style={{ width: '47.8%' }}>
             <Pressable
               onPress={() => onPick(text)}
               android_ripple={{ color: theme.colors.surfaceVariant }}
               style={({ pressed }) => ({
+                flex: 1, // 同一列的卡片等高（第 4 張文字較長）
                 minHeight: 108,
                 padding: 14,
                 borderRadius: 20,
@@ -886,7 +913,12 @@ function WelcomePane({ name, onPick }: { name?: string; onPick: (t: string) => v
               <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.primaryContainer }}>
                 <Icon size={16} color={theme.colors.primary} />
               </View>
-              <Text style={{ color: theme.colors.onSurface, fontSize: 13.5, fontWeight: '600', lineHeight: 19, marginTop: 10 }}>{text}</Text>
+              <View style={{ marginTop: 10 }}>
+                <Text style={{ color: theme.colors.onSurface, fontSize: 13.5, fontWeight: '600', lineHeight: 19 }}>{text}</Text>
+                {hint ? (
+                  <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11.5, lineHeight: 16, marginTop: 4 }}>（{hint}）</Text>
+                ) : null}
+              </View>
             </Pressable>
           </Animated.View>
         ))}

@@ -29,7 +29,17 @@
           "color": "#005A9C"
         }
       ],
-      "expo-quick-actions"
+      "expo-quick-actions",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-keep class com.google.android.gms.auth.** { *; }\n-keep class com.google.android.gms.common.** { *; }\n-keep class com.google.android.libraries.identity.googleid.** { *; }\n-keep class com.reactnativegooglesignin.** { *; }\n-dontwarn com.google.android.gms.**"
+          }
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
@@ -60,6 +70,11 @@
               "scheme": "https",
               "host": "scholarship.ncuesa.org.tw",
               "pathPrefix": "/announcement"
+            },
+            {
+              "scheme": "https",
+              "host": "scholarship.ncuesa.org.tw",
+              "pathPrefix": "/profile"
             }
           ],
           "category": [

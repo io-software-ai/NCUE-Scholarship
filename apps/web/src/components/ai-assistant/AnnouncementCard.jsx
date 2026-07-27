@@ -12,6 +12,7 @@ const AnnouncementCard = ({ id }) => {
     const [error, setError] = useState(null);
     const [expanded, setExpanded] = useState(false);   // 預設收合，避免多筆推薦時過長
     const [subState, setSubState] = useState('idle');  // idle | loading | done | error
+    const [subError, setSubError] = useState('');      // 顯示伺服器實際回傳的原因（例如 429 而非未登入）
 
     useEffect(() => {
         if (!id) {
@@ -45,16 +46,21 @@ const AnnouncementCard = ({ id }) => {
     const handleSubscribe = async () => {
         if (subState === 'loading' || subState === 'done') return;
         setSubState('loading');
+        setSubError('');
         try {
             const res = await authFetch('/api/subscriptions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ announcementId: id, daysBefore: 3 }),
             });
-            if (!res.ok) throw new Error((await res.json())?.error || '訂閱失敗');
+            if (!res.ok) {
+                const detail = await res.json().catch(() => null);
+                throw new Error(detail?.error || `訂閱失敗（HTTP ${res.status}）`);
+            }
             setSubState('done');
         } catch (e) {
             console.error('[AnnouncementCard] subscribe:', e);
+            setSubError(e.message || '訂閱失敗，請稍後再試。');
             setSubState('error');
         }
     };
@@ -154,7 +160,7 @@ const AnnouncementCard = ({ id }) => {
                 )}
             </div>
             {subState === 'error' && (
-                <p className="px-4 pb-2 text-[11px] text-danger">訂閱失敗，請確認已登入後重試。</p>
+                <p className="px-4 pb-2 text-[11px] text-danger">{subError || '訂閱失敗，請稍後再試。'}</p>
             )}
         </div>
     );

@@ -44,6 +44,8 @@ import { useAlert } from '../../src/components/dialogs';
 import { CategoryBadge, DeadlineChip, SectionLabel, EmptyState } from '../../src/components/ui';
 import { RichContent } from '../../src/components/RichContent';
 import { BottomSheet } from '../../src/components/BottomSheet';
+import { PagerLockProvider } from '../../src/lib/pagerLock';
+import { openWithDefaultApp, writeCacheFile } from '../../src/lib/openFile';
 
 const API = process.env.EXPO_PUBLIC_API_BASE || siteConfig.url;
 const SUB_DAY_OPTIONS = [1, 3, 5, 7]; // 與網頁版一致
@@ -106,6 +108,8 @@ function Pager({ list, startId }: { list: string[]; startId: string }) {
   const { width, height } = useWindowDimensions();
   const [index, setIndex] = useState(() => Math.max(0, list.indexOf(startId)));
   const [pagerH, setPagerH] = useState(0);
+  // 內文裡的寬表格橫向捲動時，暫時關閉換頁，避免水平手勢被搶去切換公告
+  const [pagerScroll, setPagerScroll] = useState(true);
 
   // 位置指示只在進頁／換頁時短暫出現，之後自動淡出（不常駐擋內容）
   const hint = useSharedValue(0);
@@ -132,17 +136,20 @@ function Pager({ list, startId }: { list: string[]; startId: string }) {
       <ScrollView
         horizontal
         pagingEnabled
+        scrollEnabled={pagerScroll}
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
         scrollEventThrottle={16}
         contentOffset={{ x: index * width, y: 0 }}
       >
-        {list.map((annId, i) => (
-          <View key={annId} style={{ width, height: pagerH || height }}>
-            {/* 開窗：只掛載目前 ±1 頁；其餘留空占位（拖曳單次最多到相鄰頁，看不到占位） */}
-            {Math.abs(i - index) <= 1 ? <AnnouncementDetailView id={annId} active={i === index} /> : null}
-          </View>
-        ))}
+        <PagerLockProvider value={setPagerScroll}>
+          {list.map((annId, i) => (
+            <View key={annId} style={{ width, height: pagerH || height }}>
+              {/* 開窗：只掛載目前 ±1 頁；其餘留空占位（拖曳單次最多到相鄰頁，看不到占位） */}
+              {Math.abs(i - index) <= 1 ? <AnnouncementDetailView id={annId} active={i === index} /> : null}
+            </View>
+          ))}
+        </PagerLockProvider>
       </ScrollView>
 
       {/* 位置指示：進頁／換頁時短暫顯示後自動淡出 */}
@@ -267,8 +274,8 @@ function AnnouncementDetailView({ id, active }: { id: string; active: boolean })
   };
 
   /**
-   * 加入日曆：產生 .ics 交給系統 → 由「裝置預設行事曆 App」匯入。
-   * 失敗（例如尚未 build 進 dev client）才退回 Google 日曆網頁版。
+   * 加入日曆：產生 .ics 直接交給「裝置預設行事曆 App」開啟（Android 走 ACTION_VIEW，不跳分享選單）。
+   * 全部失敗（例如裝置沒有任何行事曆 App）才退回 Google 日曆網頁版。
    */
   const handleCalendar = async () => {
     if (!ann) return;
@@ -282,52 +289,32 @@ function AnnouncementDetailView({ id, active }: { id: string; active: boolean })
       if (url) Linking.openURL(url).catch(() => {});
     };
     try {
-      const Sharing: any = await import('expo-sharing');
-      if (!(await Sharing.isAvailableAsync())) {
-        openGoogleFallback();
-        return;
-      }
-      const name = `scholarship-${ann.id}.ics`;
-      let uri = '';
-      try {
-        const FS: any = await import('expo-file-system/legacy');
-        uri = `${FS.cacheDirectory}${name}`;
-        await FS.writeAsStringAsync(uri, ics, { encoding: 'utf8' });
-      } catch {
-        const FS: any = await import('expo-file-system');
-        const file = new FS.File(FS.Paths.cache, name);
-        try {
-          file.delete();
-        } catch {
-          /* 檔案不存在可忽略 */
-        }
-        file.create();
-        file.write(ics);
-        uri = file.uri;
-      }
-      if (!uri) throw new Error('write failed');
-      await Sharing.shareAsync(uri, {
+      const uri = await writeCacheFile(`scholarship-${ann.id}.ics`, ics);
+      const opened = await openWithDefaultApp({
+        uri,
         mimeType: 'text/calendar',
-        UTI: 'com.apple.ical.ics',
+        utiType: 'com.apple.ical.ics',
         dialogTitle: '加入行事曆',
       });
+      if (!opened) openGoogleFallback();
     } catch {
       openGoogleFallback();
     }
   };
 
-  // 下載 PDF（expo-print：HTML → PDF → 分享；原生模組未 build 時優雅提示）
+  // 下載 PDF（expo-print：HTML → PDF → 用系統預設 PDF 閱讀器開啟）
   const downloadPdf = async () => {
     if (!ann) return;
     try {
       const Print: any = await import('expo-print');
-      const Sharing: any = await import('expo-sharing');
       const { uri } = await Print.printToFileAsync({ html: buildPrintableHtml(ann) });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: ann.title });
-      } else {
-        alert({ title: '已產生 PDF', description: uri, tone: 'success' });
-      }
+      const opened = await openWithDefaultApp({
+        uri,
+        mimeType: 'application/pdf',
+        utiType: 'com.adobe.pdf',
+        dialogTitle: ann.title,
+      });
+      if (!opened) alert({ title: '已產生 PDF', description: `找不到可開啟 PDF 的 App。\n檔案位置：${uri}`, tone: 'info' });
     } catch {
       alert({ title: '此版本尚未支援 PDF', description: '需要重新 build App（開發版）後才能使用 PDF 下載。', tone: 'info' });
     }

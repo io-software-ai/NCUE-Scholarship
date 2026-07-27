@@ -28,7 +28,7 @@ export async function POST(request) {
             .maybeSingle();
 
         if (!bindCode || new Date(bindCode.expires_at) < new Date()) {
-            return NextResponse.json({ error: '驗證碼無效或已過期，請重新於 LINE 輸入「綁定」取得' }, { status: 400 });
+            return NextResponse.json({ error: '驗證碼無效或已過期，請重新於 LINE 輸入「帳號綁定」取得' }, { status: 400 });
         }
 
         await bindLineAccount(supabaseServer, authCheck.user.id, bindCode.line_user_id);

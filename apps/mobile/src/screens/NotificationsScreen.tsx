@@ -1,15 +1,16 @@
-import React, { useMemo } from 'react';
-import { View, RefreshControl, Pressable, FlatList } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, RefreshControl, Pressable, FlatList, AppState, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, ActivityIndicator, IconButton, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellOff, BellRing, Bell } from 'lucide-react-native';
+import { BellOff, BellRing, Bell, Check } from 'lucide-react-native';
 import { CATEGORY_NAMES, localDateString, siteConfig } from '@ncue/core';
 import { useAuth } from '../lib/auth-context';
 import { useAppTheme } from '../theme';
 import { CategoryBadge, DeadlineChip, EmptyState } from '../components/ui';
-import { registerForPushNotificationsAsync } from '../lib/notifications';
+import { getPushPermissionGranted, registerForPushNotificationsAsync } from '../lib/notifications';
+import { useAlert } from '../components/dialogs';
 import { useTabBarScroll, useTabBarClearance, usePager } from '../lib/tabBar';
 
 const API = process.env.EXPO_PUBLIC_API_BASE || siteConfig.url;
@@ -21,8 +22,56 @@ export default function NotificationsScreen() {
   const { goToTab } = usePager();
   const { session } = useAuth();
   const qc = useQueryClient();
+  const alert = useAlert();
   const onScroll = useTabBarScroll();
   const clearance = useTabBarClearance();
+  const [pushGranted, setPushGranted] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  // 系統設定可能在 App 外被改動（例如剛從系統設定頁回來）→ 回前景時重新確認
+  const syncPushState = useCallback(() => {
+    getPushPermissionGranted().then(setPushGranted);
+  }, []);
+  useEffect(() => {
+    syncPushState();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') syncPushState();
+    });
+    return () => sub.remove();
+  }, [syncPushState]);
+
+  /** 開啟系統推播：明確回饋結果；系統層已關閉且不再詢問時，直接帶去系統設定頁 */
+  const enablePush = async () => {
+    setPushBusy(true);
+    try {
+      const res = await registerForPushNotificationsAsync();
+      syncPushState();
+      if (res.ok) {
+        alert({ title: '已開啟推播通知', description: '截止提醒與新公告將直接推播到這台裝置。', tone: 'success' });
+        return;
+      }
+      if (res.reason === 'blocked') {
+        alert({
+          title: '推播已被系統關閉',
+          description: '請到系統設定開啟本 App 的通知權限，即可收到截止提醒。',
+          tone: 'info',
+          action: { label: '前往系統設定', onPress: () => Linking.openSettings().catch(() => {}) },
+        });
+        return;
+      }
+      if (res.reason === 'denied') {
+        alert({ title: '尚未允許推播', description: '需要通知權限才能在截止前提醒你。', tone: 'info' });
+        return;
+      }
+      if (res.reason === 'signed-out') {
+        alert({ title: '請先登入', description: '登入後才能把這台裝置對應到你的訂閱。', tone: 'info' });
+        return;
+      }
+      alert({ title: '開啟失敗', description: res.message || '請稍後再試一次。', tone: 'error' });
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['subscriptions', session?.user.id],
@@ -163,9 +212,16 @@ export default function NotificationsScreen() {
           }
           ListFooterComponent={
             subs.length > 0 ? (
-              <Button mode="text" onPress={() => registerForPushNotificationsAsync().catch(() => {})} style={{ marginTop: 8 }}>
-                開啟系統推播通知
-              </Button>
+              pushGranted ? (
+                <View className="flex-row items-center justify-center" style={{ gap: 6, marginTop: 14, paddingVertical: 6 }}>
+                  <Check size={15} color={theme.tokens.ok} strokeWidth={3} />
+                  <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12.5, fontWeight: '600' }}>系統推播通知已開啟</Text>
+                </View>
+              ) : (
+                <Button mode="text" onPress={enablePush} loading={pushBusy} disabled={pushBusy} style={{ marginTop: 8 }}>
+                  開啟系統推播通知
+                </Button>
+              )
             ) : null
           }
         />

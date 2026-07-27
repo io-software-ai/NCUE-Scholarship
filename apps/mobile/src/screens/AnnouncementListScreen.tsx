@@ -211,6 +211,8 @@ export default function AnnouncementList() {
           onChangeText={setRawSearch}
           elevation={0}
           style={{
+            // Paper 的 Searchbar 預設約 56 高（Material 3 規格），這裡壓扁一些
+            height: 46,
             backgroundColor: theme.dark ? theme.colors.elevation.level2 : theme.colors.surface,
             borderRadius: 999,
             borderWidth: 1,
@@ -221,7 +223,7 @@ export default function AnnouncementList() {
             shadowOffset: { width: 0, height: 4 },
             elevation: theme.dark ? 0 : 2,
           }}
-          inputStyle={{ minHeight: 0, fontSize: 15, color: theme.colors.onSurface }}
+          inputStyle={{ minHeight: 0, paddingVertical: 0, fontSize: 14.5, color: theme.colors.onSurface }}
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setTimeout(() => setSearchFocused(false), 120)}
         />
@@ -260,9 +262,11 @@ export default function AnnouncementList() {
           </Animated.View>
         ) : null}
 
-        {/* 狀態分頁 + 收藏 + 排序（不用橫向 ScrollView：會被左右換頁的手勢攔截，改為自動換行） */}
-        <View className="mt-3 flex-row items-start justify-between">
-          <View className="flex-row flex-wrap" style={{ flex: 1, gap: 8 }}>
+        {/* 狀態分頁 + 收藏 + 排序
+            仍不使用橫向 ScrollView（會被左右換頁的手勢攔截）。
+            改為單列不換行：晶片以 flexShrink 讓出空間，窄螢幕上一起等比壓縮而不斷行。 */}
+        <View className="mt-3 flex-row items-center justify-between">
+          <View className="flex-row items-center" style={{ flex: 1, gap: 5 }}>
             {STATUS_TABS.map((t) => {
               const active = status === t.key && !onlySaved;
               return (
@@ -272,9 +276,12 @@ export default function AnnouncementList() {
                     setStatus(t.key);
                     setOnlySaved(false);
                   }}
-                  style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: active ? theme.colors.primary : theme.colors.surfaceVariant }}
+                  style={{ flexShrink: 1, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 999, backgroundColor: active ? theme.colors.primary : theme.colors.surfaceVariant }}
                 >
-                  <Text style={{ color: active ? theme.colors.onPrimary : theme.colors.onSurfaceVariant, fontWeight: '700', fontSize: 13 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: active ? theme.colors.onPrimary : theme.colors.onSurfaceVariant, fontWeight: '700', fontSize: 12 }}
+                  >
                     {t.label}
                   </Text>
                 </Pressable>
@@ -284,21 +291,25 @@ export default function AnnouncementList() {
             <Pressable
               onPress={() => setOnlySaved((v) => !v)}
               style={{
+                flexShrink: 1,
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: 5,
-                paddingHorizontal: 13,
+                gap: 4,
+                paddingHorizontal: 9,
                 paddingVertical: 7,
                 borderRadius: 999,
                 backgroundColor: onlySaved ? theme.colors.primary : theme.colors.surfaceVariant,
               }}
             >
               <Bookmark
-                size={13}
+                size={12}
                 color={onlySaved ? theme.colors.onPrimary : theme.colors.onSurfaceVariant}
                 fill={onlySaved ? theme.colors.onPrimary : 'transparent'}
               />
-              <Text style={{ color: onlySaved ? theme.colors.onPrimary : theme.colors.onSurfaceVariant, fontWeight: '700', fontSize: 13 }}>
+              <Text
+                numberOfLines={1}
+                style={{ color: onlySaved ? theme.colors.onPrimary : theme.colors.onSurfaceVariant, fontWeight: '700', fontSize: 12 }}
+              >
                 收藏{bookmarks.length ? ` ${bookmarks.length}` : ''}
               </Text>
             </Pressable>
@@ -306,12 +317,12 @@ export default function AnnouncementList() {
           <Pressable
             onPress={() => setSortAsc((v) => !v)}
             hitSlop={8}
-            style={{ marginLeft: 8, height: 34, width: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 999, backgroundColor: theme.colors.surfaceVariant }}
+            style={{ marginLeft: 6, height: 32, width: 32, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: 999, backgroundColor: theme.colors.surfaceVariant }}
           >
             {sortAsc ? (
-              <ArrowUpNarrowWide size={18} color={theme.colors.onSurfaceVariant} />
+              <ArrowUpNarrowWide size={17} color={theme.colors.onSurfaceVariant} />
             ) : (
-              <ArrowDownWideNarrow size={18} color={theme.colors.onSurfaceVariant} />
+              <ArrowDownWideNarrow size={17} color={theme.colors.onSurfaceVariant} />
             )}
           </Pressable>
         </View>

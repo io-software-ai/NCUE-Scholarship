@@ -3,13 +3,14 @@ import nodemailer from 'nodemailer';
 import { supabaseServer } from '@/lib/supabase/server';
 import { siteConfig } from '@/lib/siteConfig';
 import { renderEmailShell, renderEmailButton, EMAIL_COLORS } from '@/lib/emailTemplate';
+import { sendPushToUsers } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * 每日排程：公告截止提醒
  * 找出「今天已進入使用者設定的提醒窗口（截止日 - days_before ≤ 今天 ≤ 截止日）」
- * 且尚未寄送過的訂閱，寄送 Email 並標記 notified_at。
+ * 且尚未寄送過的訂閱，寄送 Email＋FCM 推播（App 與網頁版裝置皆涵蓋）並標記 notified_at。
  *
  * 保護：需帶 Authorization: Bearer ${CRON_SECRET}
  * 建議 crontab（每日 08:00）：
@@ -57,13 +58,42 @@ export async function GET(request) {
 
         const siteUrl = siteConfig.url;
         let sent = 0;
+        let pushed = 0;
         const failed = [];
 
         for (const sub of due) {
             const ann = sub.announcements;
             const email = sub.profiles?.email;
-            if (!email) continue;
             const daysLeft = Math.round((new Date(ann.application_end_date) - new Date(today)) / 86400000);
+
+            // 推播提醒（App + 網頁版裝置）：與 Email 相互獨立，任一方失敗都不影響另一方
+            let pushOk = false;
+            if (sub.user_id) {
+                try {
+                    const res = await sendPushToUsers({
+                        userIds: [sub.user_id],
+                        title: `【截止提醒】剩 ${daysLeft} 天`,
+                        body: ann.title,
+                        data: { announcementId: ann.id, url: `${siteUrl}/?announcement_id=${ann.id}` },
+                        link: `${siteUrl}/?announcement_id=${ann.id}`,
+                    });
+                    pushed += res.successCount;
+                    pushOk = res.successCount > 0;
+                } catch (e) {
+                    console.error(`[deadline-notify] Push failed for subscription ${sub.id}:`, e.message);
+                }
+            }
+
+            if (!email) {
+                // 沒有 Email 可寄：推播成功就標記已通知，否則留待明天重試
+                if (pushOk) {
+                    await supabaseServer
+                        .from('announcement_subscriptions')
+                        .update({ notified_at: new Date().toISOString() })
+                        .eq('id', sub.id);
+                }
+                continue;
+            }
             try {
                 await transporter.sendMail({
                     from: `"${process.env.SENDER_NAME || siteConfig.shortName}" <${process.env.SENDER_EMAIL}>`,
@@ -95,8 +125,8 @@ export async function GET(request) {
             }
         }
 
-        console.log(`[deadline-notify] Sent ${sent}/${due.length} reminders`);
-        return NextResponse.json({ success: true, sent, failed: failed.length });
+        console.log(`[deadline-notify] Sent ${sent}/${due.length} emails, ${pushed} push deliveries`);
+        return NextResponse.json({ success: true, sent, pushed, failed: failed.length });
     } catch (error) {
         console.error('[deadline-notify] Error:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });

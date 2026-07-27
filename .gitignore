@@ -22,10 +22,11 @@ apps/mobile/android/
 apps/mobile/ios/
 *.keystore
 *.jks
-# Firebase iOS config (add + commit manually if/when iOS is set up)
+
+# ── Firebase iOS config ── 
 GoogleService-Info.plist
-# 註：google-services.json 依決定「直接 commit」→ 不 ignore（EAS 雲端 build 需要它）
-# Google OAuth client downloads (never commit)
+
+# ── Google OAuth client downloads ── 
 client_secret*.json
 *.apps.googleusercontent.com.json
 

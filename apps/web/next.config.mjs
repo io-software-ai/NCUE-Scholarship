@@ -68,6 +68,18 @@ const nextConfig = {
             },
         ];
     },
+
+    async rewrites() {
+        return [
+            {
+                // iOS Universal Links 必須從這個固定且無副檔名的路徑提供，
+                // 交由 route handler 處理才能送出正確的 application/json。
+                // （Android 的 assetlinks.json 有副檔名，直接放 public/ 即可。）
+                source: '/.well-known/apple-app-site-association',
+                destination: '/api/well-known/apple-app-site-association',
+            },
+        ];
+    },
 };
 
 export default nextConfig;

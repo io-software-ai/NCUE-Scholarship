@@ -8,6 +8,53 @@ import { rateLimit, logSecurityEvent, validateUserInput, sanitizeUserData } from
  */
 
 /**
+ * 取出可信的用戶端 IP。
+ *
+ * nginx 用 $proxy_add_x_forwarded_for「附加」在既有標頭後面，所以 x-forwarded-for
+ * 的第一段是用戶端自己送來的、可偽造；只有最後一段（nginx 填的 $remote_addr）可信。
+ * 而 nginx 設定了 real_ip_header CF-Connecting-IP，$remote_addr 已是 Cloudflare
+ * 回報的真實用戶端位址，所以 x-real-id / 最後一段都指向同一個值。
+ */
+function getClientIp(request) {
+	const cf = request.headers.get('cf-connecting-ip');
+	if (cf) return cf.trim();
+
+	const real = request.headers.get('x-real-ip');
+	if (real) return real.trim();
+
+	const xff = request.headers.get('x-forwarded-for');
+	if (xff) {
+		const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
+		if (parts.length) return parts[parts.length - 1];
+	}
+	return 'unknown';
+}
+
+/**
+ * 從 Bearer token 取出 sub（用戶 ID），僅用於速率限制分桶。
+ *
+ * 這裡刻意不驗簽：驗簽要打 Supabase Auth，成本高，而且真正的身份驗證由
+ * verifyUserAuth 負責。偽造的 token 只會被分到另一個桶，仍受 IP 上限保護。
+ */
+function getTokenSubject(request) {
+	const authHeader = request.headers.get('authorization');
+	if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+
+	try {
+		const payload = authHeader.slice(7).split('.')[1];
+		if (!payload) return null;
+		const sub = JSON.parse(Buffer.from(payload, 'base64url').toString()).sub;
+		return typeof sub === 'string' && sub ? sub : null;
+	} catch {
+		return null;
+	}
+}
+
+// 已登入者以「使用者」計次；IP 僅作為濫用防護的粗略上限，倍率放寬以免整個
+// 校園 NAT 後面的人共用同一個額度。
+const IP_LIMIT_MULTIPLIER = 25;
+
+/**
  * 驗證用戶身份並檢查權限
  * @param {Request} request - HTTP 請求對象
  * @param {Object} options - 配置選項
@@ -24,7 +71,7 @@ export async function verifyUserAuth(request, options = {}) {
 	} = options;
 
 	try {
-		const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown';
+		const ip = getClientIp(request);
 
 		// 如果不需要驗證，直接返回成功
 		if (!requireAuth) {
@@ -124,10 +171,27 @@ export async function verifyUserAuth(request, options = {}) {
  * @returns {Object} { success: boolean, error?: NextResponse }
  */
 export function checkRateLimit(request, endpoint, limit = 60, windowMs = 60000) {
-	const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown';
+	const ip = getClientIp(request);
+	const sub = getTokenSubject(request);
 
-	if (!rateLimit(`${endpoint}-${ip}`, limit, windowMs)) {
-		logSecurityEvent('RATE_LIMIT_EXCEEDED', { ip, endpoint, limit, windowMs });
+	// 主要額度：已登入者依使用者計次，未登入者才退回依 IP。
+	// （原本一律用 IP，導致校園 NAT 後面所有人共用同一個額度而互相排擠。）
+	const primaryKey = sub ? `${endpoint}-u:${sub}` : `${endpoint}-ip:${ip}`;
+	if (!rateLimit(primaryKey, limit, windowMs)) {
+		logSecurityEvent('RATE_LIMIT_EXCEEDED', { ip, endpoint, limit, windowMs, scope: sub ? 'user' : 'ip' });
+		return {
+			success: false,
+			error: NextResponse.json(
+				{ error: '請求過於頻繁，請稍後再試' },
+				{ status: 429 }
+			)
+		};
+	}
+
+	// 濫用防護：同一 IP 的總量上限。額度放得很寬，正常共用出口不會踩到，
+	// 但可擋住偽造 token 換桶的洗請求手法。
+	if (sub && !rateLimit(`${endpoint}-ip:${ip}`, limit * IP_LIMIT_MULTIPLIER, windowMs)) {
+		logSecurityEvent('RATE_LIMIT_EXCEEDED', { ip, endpoint, limit: limit * IP_LIMIT_MULTIPLIER, windowMs, scope: 'ip-guard' });
 		return {
 			success: false,
 			error: NextResponse.json(

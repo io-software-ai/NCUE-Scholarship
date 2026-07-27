@@ -4,30 +4,8 @@ import { createServerClient } from '@supabase/ssr';
 
 export async function POST(request) {
     const res = NextResponse.next();
-    
-    // 1. 建立普通 Server Client 驗證當前用戶身分
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        {
-            cookies: {
-                getAll: () => request.cookies.getAll(),
-                setAll: (cookies) => {
-                    cookies.forEach(({ name, value, options }) => {
-                        res.cookies.set({ name, value, ...options });
-                    });
-                },
-            },
-        }
-    );
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-        return NextResponse.json({ error: '未授權的操作' }, { status: 401 });
-    }
-
-    // 2. 建立管理員 Client (使用 Service Role Key)
+    // 1. 建立管理員 Client (使用 Service Role Key)
     const supabaseAdmin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -38,6 +16,39 @@ export async function POST(request) {
             }
         }
     );
+
+    // 2. 驗證當前用戶身分：
+    //    - 網頁版帶 cookie（Supabase SSR session）
+    //    - App（Expo）沒有 cookie，改帶 Authorization: Bearer <access_token>
+    //    兩種來源都支援，App 才能在站內完成刪除帳號而不必跳網頁版。
+    let user = null;
+    const authHeader = request.headers.get('authorization');
+
+    if (authHeader?.startsWith('Bearer ')) {
+        const { data } = await supabaseAdmin.auth.getUser(authHeader.slice(7).trim());
+        user = data?.user ?? null;
+    } else {
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+            {
+                cookies: {
+                    getAll: () => request.cookies.getAll(),
+                    setAll: (cookies) => {
+                        cookies.forEach(({ name, value, options }) => {
+                            res.cookies.set({ name, value, ...options });
+                        });
+                    },
+                },
+            }
+        );
+        const { data } = await supabase.auth.getUser();
+        user = data?.user ?? null;
+    }
+
+    if (!user) {
+        return NextResponse.json({ error: '未授權的操作' }, { status: 401 });
+    }
 
     try {
         // 先解除／清理跨表關聯（多個外鍵缺 ON DELETE 規則，避免被 FK 擋下）

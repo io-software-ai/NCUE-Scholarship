@@ -4,11 +4,12 @@
  * 換行、分隔線、圖片，並解碼 HTML 實體（&nbsp; 等）。
  * 來源為 TinyMCE 產生的公告 HTML。
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Image, ScrollView, Linking } from 'react-native';
 import { Text } from 'react-native-paper';
 import { parse } from 'node-html-parser';
 import { useAppTheme, type AppTheme } from '../theme';
+import { usePagerLock } from '../lib/pagerLock';
 
 const NAMED: Record<string, string> = {
   nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", hellip: '…',
@@ -214,8 +215,27 @@ function renderContainer(node: any, ctx: Ctx, base?: any): React.ReactNode[] {
   return out;
 }
 
+/* ── 表格欄寬估算 ──────────────────────────────
+ * 固定欄寬會讓內容少的表格擠成一直換行的窄柱；改成依「各欄最長內容」估寬：
+ * 總寬放得下就撐滿容器（盡量寬、少換行），放不下則維持自然寬度並可橫向捲動。 */
+const CELL_PAD = 10;
+const MIN_COL_W = 76;
+const MAX_COL_W = 260;
+const CJK_RE = /[\u1100-\u115F\u2E80-\u9FFF\uA960-\uA97F\uAC00-\uD7FF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/;
+
+/** 以字元寬度估算一格文字的視覺長度（CJK 約全形、其餘半形） */
+function textWidthOf(node: any): number {
+  const raw = decode(String(node?.text ?? '')).replace(/\s+/g, ' ').trim();
+  let w = 0;
+  for (const ch of raw) w += CJK_RE.test(ch) ? 13.5 : 7.4;
+  return w;
+}
+
 function Table({ node, ctx }: { node: any; ctx: Ctx }) {
   const { theme } = ctx;
+  const setPagerScroll = usePagerLock();
+  const [availW, setAvailW] = useState(0);
+
   const rows: any[] = node
     .querySelectorAll('tr')
     .filter((tr: any) => tr.childNodes.some((c: any) => isEl(c) && (tagOf(c) === 'td' || tagOf(c) === 'th')));
@@ -224,56 +244,99 @@ function Table({ node, ctx }: { node: any; ctx: Ctx }) {
   const cellsOf = (tr: any): any[] => tr.childNodes.filter((c: any) => isEl(c) && (tagOf(c) === 'td' || tagOf(c) === 'th'));
   const spanOf = (cell: any) => Math.max(1, parseInt(cell.getAttribute('colspan') || '1', 10) || 1);
 
-  // 欄位對齊：每格「絕對固定寬」= 基準 × colspan（禁 grow/shrink），
-  // 內容再長只會換行增高，欄寬永遠一致 → 跨列直行必對齊。
   const colCount = Math.max(1, ...rows.map((tr) => cellsOf(tr).reduce((s, c) => s + spanOf(c), 0)));
-  const COL_W = colCount <= 2 ? 160 : colCount === 3 ? 130 : 112;
+
+  // 1) 各欄理想寬 = 該欄最長內容（跨欄格平均分攤），夾在 MIN/MAX 之間
+  const ideal = new Array(colCount).fill(MIN_COL_W);
+  for (const tr of rows) {
+    let ci = 0;
+    for (const cell of cellsOf(tr)) {
+      const span = spanOf(cell);
+      const per = textWidthOf(cell) / span + CELL_PAD * 2;
+      for (let k = 0; k < span && ci + k < colCount; k++) {
+        ideal[ci + k] = Math.max(ideal[ci + k], Math.min(MAX_COL_W, per));
+      }
+      ci += span;
+    }
+  }
+
+  // 2) 放得下就等比放大撐滿容器；放不下就維持自然寬（可橫向捲動）
+  const naturalW = ideal.reduce((a, b) => a + b, 0);
+  const scale = availW > 0 && naturalW < availW ? availW / naturalW : 1;
+  const colW = ideal.map((w) => w * scale);
+  const tableW = colW.reduce((a, b) => a + b, 0);
+  const scrollable = availW > 0 && tableW > availW + 1;
+
+  // 欄位對齊：每格寬 = 所跨欄寬總和（禁 grow/shrink），內容再長只會換行增高 → 跨列直行必對齊
+  const widthOfCell = (start: number, span: number) => {
+    let w = 0;
+    for (let k = 0; k < span && start + k < colCount; k++) w += colW[start + k];
+    return w;
+  };
+
+  // 表格可橫向捲動時，觸控期間先關掉外層換頁分頁器，避免水平手勢被搶走
+  const lock = scrollable ? () => setPagerScroll(false) : undefined;
+  const unlock = scrollable ? () => setPagerScroll(true) : undefined;
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
-      <View style={{ width: colCount * COL_W, borderWidth: 1, borderColor: theme.colors.outlineVariant, borderRadius: 12, overflow: 'hidden' }}>
-        {rows.map((tr: any, ri: number) => {
-          const cells = cellsOf(tr);
-          const isHead = ri === 0 || cells.some((c) => tagOf(c) === 'th');
-          return (
-            <View
-              key={ri}
-              style={{
-                flexDirection: 'row',
-                backgroundColor: isHead ? theme.colors.surfaceVariant : ri % 2 ? theme.colors.surface : theme.tokens.surfaceHover + '55',
-                borderTopWidth: ri === 0 ? 0 : 1,
-                borderTopColor: theme.colors.outlineVariant,
-              }}
-            >
-              {cells.map((cell: any, ci: number) => {
-                const span = spanOf(cell);
-                return (
-                  <View
-                    key={ci}
-                    style={{
-                      width: COL_W * span,
-                      flexGrow: 0,
-                      flexShrink: 0,
-                      overflow: 'hidden',
-                      padding: 10,
-                      borderLeftWidth: ci === 0 ? 0 : 1,
-                      borderLeftColor: theme.colors.outlineVariant,
-                    }}
-                  >
-                    {renderContainer(cell, { ...ctx, k: `${ctx.k}.${ri}.${ci}` }, {
-                      fontSize: 13.5,
-                      lineHeight: 20,
-                      fontWeight: isHead ? '700' : '400',
-                      color: isHead ? theme.colors.onSurface : theme.colors.onSurfaceVariant,
-                    })}
-                  </View>
-                );
-              })}
-            </View>
-          );
-        })}
-      </View>
-    </ScrollView>
+    <View style={{ marginVertical: 10 }} onLayout={(e) => setAvailW(Math.round(e.nativeEvent.layout.width))}>
+      <ScrollView
+        horizontal
+        scrollEnabled={scrollable}
+        showsHorizontalScrollIndicator={scrollable}
+        persistentScrollbar={scrollable}
+        onTouchStart={lock}
+        onTouchEnd={unlock}
+        onTouchCancel={unlock}
+        onMomentumScrollEnd={unlock}
+      >
+        <View style={{ width: tableW || undefined, borderWidth: 1, borderColor: theme.colors.outlineVariant, borderRadius: 12, overflow: 'hidden' }}>
+          {rows.map((tr: any, ri: number) => {
+            const cells = cellsOf(tr);
+            const isHead = ri === 0 || cells.some((c) => tagOf(c) === 'th');
+            let colCursor = 0;
+            return (
+              <View
+                key={ri}
+                style={{
+                  flexDirection: 'row',
+                  backgroundColor: isHead ? theme.colors.surfaceVariant : ri % 2 ? theme.colors.surface : theme.tokens.surfaceHover + '55',
+                  borderTopWidth: ri === 0 ? 0 : 1,
+                  borderTopColor: theme.colors.outlineVariant,
+                }}
+              >
+                {cells.map((cell: any, ci: number) => {
+                  const span = spanOf(cell);
+                  const start = colCursor;
+                  colCursor += span;
+                  return (
+                    <View
+                      key={ci}
+                      style={{
+                        width: widthOfCell(start, span),
+                        flexGrow: 0,
+                        flexShrink: 0,
+                        overflow: 'hidden',
+                        padding: CELL_PAD,
+                        borderLeftWidth: ci === 0 ? 0 : 1,
+                        borderLeftColor: theme.colors.outlineVariant,
+                      }}
+                    >
+                      {renderContainer(cell, { ...ctx, k: `${ctx.k}.${ri}.${ci}` }, {
+                        fontSize: 13.5,
+                        lineHeight: 20,
+                        fontWeight: isHead ? '700' : '400',
+                        color: isHead ? theme.colors.onSurface : theme.colors.onSurfaceVariant,
+                      })}
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 

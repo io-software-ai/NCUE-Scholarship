@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, ScrollView, Alert, Linking, Pressable, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SvgXml } from 'react-native-svg';
+import Svg, { Path, SvgXml } from 'react-native-svg';
 import { Text, Avatar, Button, ActivityIndicator, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -15,7 +15,6 @@ import {
   ChevronRight,
   LogIn,
   HelpCircle,
-  MessageCircle,
   Check,
   ExternalLink,
   Sun,
@@ -27,6 +26,7 @@ import { useAuth } from '../lib/auth-context';
 import { useThemePreference, useAppTheme } from '../theme';
 import { SectionLabel } from '../components/ui';
 import { IO_SOFTWARE_LOGO } from '../assets/ioSoftwareLogo';
+import { LINE_LOGO_PATH, LINE_GREEN, LINE_GREEN_DARK } from '../assets/lineLogo';
 import { useTabBarScroll, useTabBarClearance, usePager } from '../lib/tabBar';
 import { ConfirmDialog, ConfirmByTypingDialog, useAlert } from '../components/dialogs';
 
@@ -44,6 +44,7 @@ export default function ProfileScreen() {
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteFailOpen, setDeleteFailOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const { data: subCount } = useQuery({
     queryKey: ['subscriptions', session?.user.id],
@@ -56,6 +57,7 @@ export default function ProfileScreen() {
     select: (arr) => (Array.isArray(arr) ? arr.length : 0),
   });
 
+  // 刪除帳號：與網頁版同一支 API（改用 Bearer token 驗證），App 內即可完成註銷
   const doDelete = async () => {
     if (!session) return;
     setDeleting(true);
@@ -64,11 +66,13 @@ export default function ProfileScreen() {
         method: 'POST',
         headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
       });
-      if (!res.ok) throw new Error();
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.error || '註銷過程中發生錯誤');
       setDeleteOpen(false);
       await signOut();
-    } catch {
+    } catch (e: any) {
       setDeleteOpen(false);
+      setDeleteError(e?.message || '請檢查網路連線後再試一次。');
       setDeleteFailOpen(true);
     } finally {
       setDeleting(false);
@@ -203,13 +207,13 @@ export default function ProfileScreen() {
       />
       <ConfirmDialog
         open={deleteFailOpen}
-        title="無法於 App 內完成"
-        description="請前往網頁版帳號設定完成刪除，或來信客服協助。"
-        confirmLabel="開啟網頁版"
+        title="刪除失敗"
+        description={`${deleteError}\n若持續失敗，請來信 ${siteConfig.supportEmail} 由我們協助處理。`}
+        confirmLabel="重試"
         cancelLabel="關閉"
         onConfirm={() => {
           setDeleteFailOpen(false);
-          Linking.openURL(`${siteConfig.url}/profile`);
+          setDeleteOpen(true);
         }}
         onClose={() => setDeleteFailOpen(false)}
       />
@@ -217,7 +221,16 @@ export default function ProfileScreen() {
   );
 }
 
-/** LINE 綁定（對齊網頁版：官方帳號輸入「綁定」取 6 位驗證碼 → 這裡提交） */
+/** LINE 官方標誌（單一 path，字樣鏤空；color 直接當 fill） */
+function LineLogo({ size = 20, color = '#FFFFFF' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d={LINE_LOGO_PATH} fill={color} />
+    </Svg>
+  );
+}
+
+/** LINE 綁定（對齊網頁版：官方帳號輸入「帳號綁定」取 6 位驗證碼 → 這裡提交） */
 function LineBindingSection({ session }: { session: any }) {
   const theme = useAppTheme();
   const alert = useAlert();
@@ -321,29 +334,30 @@ function LineBindingSection({ session }: { session: any }) {
   return (
     <View style={{ padding: 16 }}>
       <View className="flex-row items-center" style={{ gap: 10, marginBottom: 10 }}>
-        <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#06C7551F' }}>
-          <MessageCircle size={18} color="#06C755" />
+        <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: LINE_GREEN + '1F' }}>
+          <LineLogo size={19} color={LINE_GREEN} />
         </View>
         <Text style={{ flex: 1, color: theme.colors.onSurfaceVariant, fontSize: 12.5, lineHeight: 18 }}>
           綁定後 AI 助理可跨 LINE／App 同步對話，並透過 LINE 接收公告推播。
         </Text>
       </View>
 
-      {/* 底色放在純 View 上（Pressable 帶背景色在此環境不穩定），Pressable 只負責觸控 */}
-      <View style={{ borderRadius: 999, overflow: 'hidden', backgroundColor: '#06C755', marginBottom: 12 }}>
+      {/* LINE 官方按鈕樣式：品牌綠底 + 白色官方標誌。深色模式改用官方 hover 綠，降低大面積純色的刺眼感。
+          底色放在純 View 上（Pressable 帶背景色在此環境不穩定），Pressable 只負責觸控 */}
+      <View style={{ borderRadius: 999, overflow: 'hidden', backgroundColor: theme.dark ? LINE_GREEN_DARK : LINE_GREEN, marginBottom: 12 }}>
         <Pressable
           onPress={openLineOA}
-          android_ripple={{ color: 'rgba(255,255,255,0.22)' }}
+          android_ripple={{ color: 'rgba(0,0,0,0.16)' }}
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46 }}
         >
-          <MessageCircle size={17} color="#FFFFFF" />
+          <LineLogo size={20} color="#FFFFFF" />
           <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>1. 加入 LINE 官方帳號</Text>
           <ExternalLink size={14} color="rgba(255,255,255,0.8)" />
         </Pressable>
       </View>
 
       <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginBottom: 8 }}>
-        2. 在 LINE 傳送「<Text style={{ fontWeight: '800', color: theme.colors.onSurface }}>綁定</Text>」取得 6 位數驗證碼，輸入完成綁定：
+        2. 在 LINE 傳送「<Text style={{ fontWeight: '800', color: theme.colors.onSurface }}>帳號綁定</Text>」（或點下方選單）取得 6 位數驗證碼，輸入完成綁定：
       </Text>
       <View className="flex-row" style={{ gap: 10 }}>
         <TextInput

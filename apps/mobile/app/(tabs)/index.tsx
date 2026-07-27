@@ -10,6 +10,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Newspaper, Sparkles, Bell, Settings } from 'lucide-react-native';
 import { useAppTheme } from '../../src/theme';
 import { TabBarProvider, PagerProvider, useTabBar } from '../../src/lib/tabBar';
+import { PagerLockProvider } from '../../src/lib/pagerLock';
 import { FloatingTabBar, type TabDef } from '../../src/components/FloatingTabBar';
 import AnnouncementListScreen from '../../src/screens/AnnouncementListScreen';
 import AssistantScreen from '../../src/screens/AssistantScreen';
@@ -43,6 +44,7 @@ function PagerInner() {
   const { width } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
+  const [pagerScroll, setPagerScroll] = useState(true); // 內層橫向捲動（寬表格）期間暫停換頁
   const progress = useSharedValue(0); // 0..count-1 即時頁面位置
   const { resetForPageChange } = useTabBar();
 
@@ -51,17 +53,20 @@ function PagerInner() {
     resetForPageChange();
   }, [index, resetForPageChange]);
 
-  // App 圖示長按捷徑：?tab=assistant 直接開助理頁（?saved=1 由公告列表自行處理）
-  const params = useLocalSearchParams<{ tab?: string }>();
+  // 指定分頁：App 圖示長按捷徑（?tab=assistant）與深連結（/profile → ?tab=profile&ts=…）
+  // ts 讓「重複導到同一分頁」也能生效（?saved=1 由公告列表自行處理）
+  const params = useLocalSearchParams<{ tab?: string; ts?: string }>();
   const appliedTabRef = useRef<string | null>(null);
   useEffect(() => {
     const t = params.tab;
-    if (!t || appliedTabRef.current === t) return;
-    appliedTabRef.current = t;
+    if (!t) return;
+    const key = `${t}:${params.ts ?? ''}`;
+    if (appliedTabRef.current === key) return;
+    appliedTabRef.current = key;
     const i = TABS.findIndex((x) => x.key === t);
     if (i >= 0) goToTab(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.tab, width]);
+  }, [params.tab, params.ts, width]);
 
   const onHScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const p = e.nativeEvent.contentOffset.x / Math.max(1, width);
@@ -85,6 +90,7 @@ function PagerInner() {
             ref={scrollRef}
             horizontal
             pagingEnabled
+            scrollEnabled={pagerScroll}
             showsHorizontalScrollIndicator={false}
             onScroll={onHScroll}
             onMomentumScrollEnd={onMomentumEnd}
@@ -93,11 +99,13 @@ function PagerInner() {
             // 內層垂直清單可正常捲動；橫向手勢才換頁
             style={{ flex: 1 }}
           >
-            {SCREENS.map((Screen, i) => (
-              <View key={TABS[i].key} style={{ width }}>
-                <Screen active={index === i} />
-              </View>
-            ))}
+            <PagerLockProvider value={setPagerScroll}>
+              {SCREENS.map((Screen, i) => (
+                <View key={TABS[i].key} style={{ width }}>
+                  <Screen active={index === i} />
+                </View>
+              ))}
+            </PagerLockProvider>
           </ScrollView>
           <FloatingTabBar
             tabs={TABS}
