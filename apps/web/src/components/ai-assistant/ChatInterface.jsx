@@ -8,31 +8,17 @@ import { supabase } from '@/lib/supabase/client';
 import Toast from '@/components/ui/Toast';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
-import { Loader2, Sparkles, CalendarClock, HandCoins, GraduationCap, HelpCircle, MessagesSquare, ClipboardCheck, ListChecks, PenLine, Users } from 'lucide-react';
+import { Loader2, Sparkles, HandCoins, GraduationCap, ListChecks, Users } from 'lucide-react';
 
-/** 助理模式：一般問答 vs 依承辦人員查核重點檢核申請文件 */
-const MODES = [
-    { id: 'general', label: '一般對話', icon: MessagesSquare, hint: '查詢公告、資格與申請規定' },
-    { id: 'review', label: '文件檢核', icon: ClipboardCheck, hint: '依承辦人員的查核重點檢查申請書與自傳' },
+const SUGGESTIONS = [
+    { icon: HandCoins, text: '我是低收入戶學生，可以申請哪些獎學金？' },
+    { icon: GraduationCap, text: '什麼是彰師揚鷹生？我符合資格嗎？' },
+    { icon: ListChecks, text: '班排百分比怎麼算？研究生的班排名要怎麼取得？' },
+    { icon: Users, text: '家庭狀況欄位要寫到什麼程度才夠？' },
 ];
 
-const SUGGESTIONS = {
-    general: [
-        { icon: CalendarClock, text: '最近有哪些即將截止的獎學金？' },
-        { icon: HandCoins, text: '我是低收入戶學生，可以申請哪些獎學金？' },
-        { icon: GraduationCap, text: '什麼是彰師揚鷹生？我符合資格嗎？' },
-        { icon: HelpCircle, text: '「不得兼領」是什麼意思？可以同時申請嗎？' },
-    ],
-    review: [
-        { icon: ListChecks, text: '申請書送件前要檢查哪些欄位才不會被退件？' },
-        { icon: PenLine, text: '我貼上自傳，請幫我看哪裡寫得不夠具體' },
-        { icon: Users, text: '家庭狀況欄位要寫到什麼程度才夠？' },
-        { icon: ClipboardCheck, text: '班排百分比怎麼算？研究生的班排名要怎麼取得？' },
-    ],
-};
-
 /** Gemini 式問候畫面：漸層問候語 + 建議晶片 */
-const WelcomeMessage = ({ userName, onSuggestion, mode }) => (
+const WelcomeMessage = ({ userName, onSuggestion }) => (
     <div className="flex flex-col justify-center h-full w-full max-w-3xl mx-auto px-2 select-none animate-in fade-in duration-500">
         <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-2 md:mb-3">
             <span className="bg-gradient-to-r from-primary to-ok bg-clip-text text-transparent">
@@ -40,13 +26,11 @@ const WelcomeMessage = ({ userName, onSuggestion, mode }) => (
             </span>
         </h2>
         <p className="text-xl md:text-2xl text-ink-soft/70 font-medium mb-8 md:mb-12">
-            {mode === 'review'
-                ? '貼上或上傳申請書、自傳，我會照生輔組的查核重點逐項檢查。'
-                : '想了解哪些獎學金？我可以搜尋公告、解釋申請規定。'}
+            想了解哪些獎學金？我可以搜尋公告、解釋申請規定，也能照生輔組的查核重點檢視你的申請書與自傳。
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {SUGGESTIONS[mode].map(({ icon: Icon, text }) => (
+            {SUGGESTIONS.map(({ icon: Icon, text }) => (
                 <button
                     key={text}
                     onClick={() => onSuggestion(text)}
@@ -75,8 +59,8 @@ const ChatInterface = () => {
     // 完全手動原生狀態管理
     const [sessionId, setSessionId] = useState(null);
     const [input, setInput] = useState('');
-    // 助理模式：general = 一般對話、review = 文件檢核（帶入承辦人員查核重點）
-    const [mode, setMode] = useState('general');
+    // 建議問題點擊後聚焦輸入框（不自動送出）
+    const [focusSignal, setFocusSignal] = useState(0);
     // 「@」指定公告（檢核基準）與對話附件
     const [reviewAnnouncement, setReviewAnnouncement] = useState(null); // { id, title } | null
     const [attachedFile, setAttachedFile] = useState(null);             // { name, mimeType, size, data } | null
@@ -95,9 +79,7 @@ const ChatInterface = () => {
         if (!contentToSend && attachedFile) {
             contentToSend = reviewAnnouncement
                 ? '請依這則公告的評選重點，檢視我上傳的文件並給我修改建議。'
-                : mode === 'review'
-                    ? '請依承辦人員的查核重點，檢視我上傳的文件，指出會被退件的錯誤與缺漏。'
-                    : '請幫我檢視這份文件的內容。';
+                : '請依承辦人員的查核重點，檢視我上傳的文件，指出會被退件的錯誤與缺漏。';
         }
         if (!contentToSend || isLoading) return;
 
@@ -111,7 +93,11 @@ const ChatInterface = () => {
         if (!sessionId) setSessionId(currentSessionId);
 
         // 2. 將使用者的訊息加入畫面
-        const userMessage = { id: crypto.randomUUID(), role: 'user', content: contentToSend, createdAt: new Date() };
+        // 畫面上的使用者訊息帶附件標記（與伺服器存進歷史的格式一致，由 MessageBubble 轉成附件卡）
+        const displayContent = sendingAttachment
+            ? `${contentToSend}\n\n（附件：${sendingAttachment.name}）`.trim()
+            : contentToSend;
+        const userMessage = { id: crypto.randomUUID(), role: 'user', content: displayContent, createdAt: new Date() };
         const aiMessageId = crypto.randomUUID();
         setMessages(prev => [...prev, userMessage]);
 
@@ -130,7 +116,6 @@ const ChatInterface = () => {
                     messages: [...messages, userMessage],
                     sessionId: currentSessionId,
                     text: contentToSend,
-                    mode,
                     reviewAnnouncementId: reviewAnnouncement?.id || null,
                     attachment: sendingAttachment || null,
                 })
@@ -139,7 +124,9 @@ const ChatInterface = () => {
             if (!response.ok) {
                 if (response.status === 401) throw new Error('登入已過期，請重新登入');
                 if (response.status === 429) throw new Error('請求太頻繁，請稍候再試');
-                throw new Error('伺服器發生錯誤');
+                // 顯示伺服器回傳的原因（例如檔案無法讀取），不要一律吞成「伺服器發生錯誤」
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData?.error || '伺服器發生錯誤');
             }
 
             // 3. 處理 SSE 串流
@@ -247,6 +234,7 @@ const ChatInterface = () => {
                     role: msg.role === 'model' ? 'model' : 'user', // Ensure role matches our frontend expectation
                     content: msg.message_content,
                     source: msg.source,
+                    fromHistory: true, // 過去的回合：不再顯示記憶庫同意卡
                     createdAt: new Date(msg.timestamp)
                 })));
 
@@ -284,30 +272,6 @@ const ChatInterface = () => {
 
     return (
         <div className="flex flex-col flex-1 bg-page/50 overflow-hidden font-sans relative select-none">
-            {/* 模式選擇：一般對話 / 文件檢核（檢核模式會帶入承辦人員的查核重點） */}
-            <div className="flex-shrink-0 border-b border-line bg-page/70 backdrop-blur-sm">
-                <div className="max-w-3xl mx-auto w-full px-4 md:px-6 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                    <div role="tablist" aria-label="助理模式" className="inline-flex p-0.5 rounded-xl bg-surface border border-line">
-                        {MODES.map(({ id, label, icon: Icon }) => (
-                            <button
-                                key={id}
-                                type="button"
-                                role="tab"
-                                aria-selected={mode === id}
-                                onClick={() => setMode(id)}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-[13px] font-semibold transition-colors duration-150
-                                    focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
-                                    ${mode === id ? 'bg-primary text-white dark:text-[#10151B]' : 'text-ink-soft hover:text-ink'}`}
-                            >
-                                <Icon size={14} aria-hidden="true" />
-                                {label}
-                            </button>
-                        ))}
-                    </div>
-                    <p className="text-xs text-ink-soft/80">{MODES.find(m => m.id === mode)?.hint}</p>
-                </div>
-            </div>
-
             {/* 對話顯示區域 - 限制在此內部捲動 */}
             <div 
                 ref={scrollAreaRef} 
@@ -326,8 +290,7 @@ const ChatInterface = () => {
                         <div className="flex-1 flex items-center justify-center py-2">
                             <WelcomeMessage
                                 userName={user?.profile?.username || user?.user_metadata?.name || ''}
-                                onSuggestion={(text) => onChatSubmit(null, text)}
-                                mode={mode}
+                                onSuggestion={(text) => { setInput(text); setFocusSignal(n => n + 1); }}
                             />
                         </div>
                     ) : (
@@ -374,6 +337,7 @@ const ChatInterface = () => {
                         onPickReview={setReviewAnnouncement}
                         attachment={attachedFile}
                         onAttachFile={setAttachedFile}
+                        focusSignal={focusSignal}
                     />
                 </div>
             </div>

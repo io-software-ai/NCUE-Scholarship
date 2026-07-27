@@ -70,6 +70,8 @@ interface Msg {
   thought?: string;
   tools?: Tool[];
   isStreaming?: boolean;
+  /** 由資料庫歷史載入的回合（記憶庫同意卡不重播） */
+  fromHistory?: boolean;
 }
 interface AttachmentDraft { name: string; mimeType: string; data: string; size: number }
 
@@ -159,7 +161,12 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
           setMessages(
             j.data
               .filter((m: any) => m.message_content !== '__HISTORY_CLEARED__')
-              .map((m: any) => ({ id: String(m.id ?? genId()), role: m.role === 'model' ? 'assistant' : 'user', content: m.message_content })),
+              .map((m: any) => ({
+                id: String(m.id ?? genId()),
+                role: m.role === 'model' ? 'assistant' : 'user',
+                content: m.message_content,
+                fromHistory: true, // 過去的回合：不再顯示記憶庫同意卡
+              })),
           );
         }
       })
@@ -208,8 +215,8 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
       const res = await DocumentPicker.getDocumentAsync({ type: ALLOWED_MIME, copyToCacheDirectory: true, multiple: false });
       if (res.canceled || !res.assets?.[0]) return;
       const a = res.assets[0];
-      if ((a.size ?? 0) > 5 * 1024 * 1024) {
-        alert({ title: '檔案過大', description: '附件需小於 5MB。', tone: 'error' });
+      if ((a.size ?? 0) > 10 * 1024 * 1024) {
+        alert({ title: '檔案過大', description: '附件需小於 10MB。', tone: 'error' });
         return;
       }
       let data = '';
@@ -232,7 +239,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
     if ((!trimmed && !attachment) || sending || !session) return;
     lastSendRef.current = Date.now();
     const history = messages.map((m) => ({ id: m.id, role: m.role === 'assistant' ? 'model' : 'user', content: m.content, createdAt: new Date().toISOString() }));
-    const shown = trimmed || `（附件：${attachment?.name}）`;
+    const shown = attachment ? `${trimmed}\n\n（附件：${attachment.name}）`.trim() : trimmed;
     const userMsg: Msg = { id: genId(), role: 'user', content: shown };
     const aiId = genId();
     setMessages((prev) => [...prev, userMsg, { id: aiId, role: 'assistant', content: '', isStreaming: true }]);
@@ -755,17 +762,27 @@ function AnnouncementPicker({ open, onClose, onPick }: { open: boolean; onClose:
     queryKey: ['ann-picker', q],
     enabled: open,
     queryFn: async () => {
-      let query = supabase
-        .from('announcements')
-        .select('id, title, category, application_end_date')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(30);
-      const safe = q.replace(/[,()%*\\]/g, ' ').trim();
-      if (safe) query = query.ilike('title', `%${safe}%`);
-      const { data, error } = await query;
+      const base = () =>
+        supabase
+          .from('announcements')
+          .select('id, title, category, application_end_date')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(30);
+      const safe = q.replace(/[,()%*\\_]/g, ' ').trim();
+      if (!safe) {
+        const { data, error } = await base();
+        if (error) throw error;
+        return data ?? [];
+      }
+      const { data, error } = await base().ilike('title', `%${safe}%`);
       if (error) throw error;
-      return data ?? [];
+      if (data && data.length > 0) return data;
+      // 子字串查無結果 → 逐字模糊（%蘭%馨% 可命中「蘭馨愛‧讓夢想起飛」）
+      if (safe.length < 2) return [];
+      const loose = `%${Array.from(safe).filter((c) => c.trim()).join('%')}%`;
+      const { data: fuzzy } = await base().ilike('title', loose);
+      return fuzzy ?? [];
     },
   });
 
@@ -1067,20 +1084,47 @@ function MessageRow({
     .trim();
 
   if (!isAI) {
+    // 附件：只顯示檔名，不顯示抽取出的文件全文（含個資）
+    const raw0 = msg.content || '';
+    const legacy = raw0.match(/\n*【使用者上傳文件「([^」]+)」內容】[\s\S]*$/);
+    const tagged = raw0.match(/\n*（附件：([^）]+)）\s*$/);
+    const fileName = legacy?.[1] ?? tagged?.[1] ?? null;
+    const bodyText = legacy ? raw0.slice(0, legacy.index).trim() : tagged ? raw0.slice(0, tagged.index).trim() : raw0;
     return (
       <Animated.View entering={enterDown()} style={{ alignItems: 'flex-end', marginBottom: 18 }}>
-        <View
-          style={{
-            maxWidth: '85%',
-            backgroundColor: theme.colors.primaryContainer,
-            borderRadius: 22,
-            borderBottomRightRadius: 8,
-            paddingHorizontal: 16,
-            paddingVertical: 11,
-          }}
-        >
-          <Text style={{ color: theme.colors.onSurface, lineHeight: 23, fontSize: 15.5 }}>{msg.content}</Text>
-        </View>
+        {fileName ? (
+          <View
+            className="flex-row items-center"
+            style={{
+              gap: 7,
+              maxWidth: '85%',
+              marginBottom: 6,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderRadius: 14,
+              backgroundColor: theme.colors.surfaceVariant,
+            }}
+          >
+            <Paperclip size={14} color={theme.colors.onSurfaceVariant} />
+            <Text numberOfLines={1} style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, flexShrink: 1 }}>
+              {fileName}
+            </Text>
+          </View>
+        ) : null}
+        {bodyText ? (
+          <View
+            style={{
+              maxWidth: '85%',
+              backgroundColor: theme.colors.primaryContainer,
+              borderRadius: 22,
+              borderBottomRightRadius: 8,
+              paddingHorizontal: 16,
+              paddingVertical: 11,
+            }}
+          >
+            <Text style={{ color: theme.colors.onSurface, lineHeight: 23, fontSize: 15.5 }}>{bodyText}</Text>
+          </View>
+        ) : null}
       </Animated.View>
     );
   }
@@ -1176,8 +1220,8 @@ function MessageRow({
       {subs.map((s, i) => (
         <SubscribeConfirm key={i} announcementId={s.id} days={s.days} session={session} />
       ))}
-      {/* 記憶庫提議：串流結束後才顯示，避免解析到半截標記 */}
-      {!msg.isStreaming && memoryItems.length > 0 ? (
+      {/* 記憶庫提議：串流結束後才顯示；歷史訊息不再顯示（避免重整後重複詢問） */}
+      {!msg.isStreaming && !msg.fromHistory && memoryItems.length > 0 ? (
         <MemoryConsent items={memoryItems} session={session} />
       ) : null}
 

@@ -59,6 +59,7 @@ function buildSystemPrompt(channel) {
 
 ## 輸出格式（網頁聊天）
 - 使用簡潔的 HTML 片段輸出（<p>、<ul>、<li>、<strong>、<a>、<table>），不要輸出 <html>/<body> 標籤，也不要使用 Markdown。
+- 嚴禁把 HTML 包在 \`\`\` 程式碼圍欄裡（會被當成程式碼區塊顯示），直接輸出標籤本身。
 - 重要日期、金額以 <strong> 強調。
 - 當回答中推薦了特定公告，請在回答的「最後一行」加上卡片標記，格式：[ANNOUNCEMENT_CARD:公告ID1,公告ID2]（最多 3 筆，ID 必須是工具回傳的 announcement_id UUID）。
 - 當你提議為使用者訂閱某公告的截止提醒時，在回答最後一行加上標記：[SUBSCRIBE_CONFIRM:公告ID:天數]（天數 1-14，預設 3；一次只能一筆）。介面會顯示「確認訂閱」按鈕，由使用者點擊確認——加上標記後就不要再呼叫 subscribe_announcement，除非使用者以文字明確同意。

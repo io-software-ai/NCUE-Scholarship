@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Send, Trash2, Sparkles, Paperclip, Megaphone, X, Loader2, FileSearch } from 'lucide-react';
-import { supabase } from '@/lib/supabase/client';
+import { searchAnnouncements } from '@/lib/announcementSearch';
 import CategoryBadge from '@/components/ui/CategoryBadge';
 
 const ATTACH_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.txt';
 const ATTACH_MIME = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain'];
-const MAX_ATTACH_SIZE = 5 * 1024 * 1024;
+const MAX_ATTACH_SIZE = 10 * 1024 * 1024;
 
 const ChatInput = ({
     input = '',
@@ -21,34 +21,37 @@ const ChatInput = ({
     onPickReview,
     attachment,
     onAttachFile,
+    focusSignal = 0,
 }) => {
     // 「@」公告選單
-    const [announcementList, setAnnouncementList] = useState(null); // null = 未載入
-    const [mentionQuery, setMentionQuery] = useState(null);          // null = 關閉
+    const [mentionMatches, setMentionMatches] = useState(null); // null = 載入中
+    const [mentionQuery, setMentionQuery] = useState(null);     // null = 關閉
     const [mentionIndex, setMentionIndex] = useState(0);
     const [attachError, setAttachError] = useState('');
     const fileInputRef = useRef(null);
+    const textareaRef = useRef(null);
 
     useEffect(() => { setMentionIndex(0); }, [mentionQuery]);
 
-    const ensureAnnouncements = async () => {
-        if (announcementList !== null) return;
-        const { data } = await supabase
-            .from('announcements')
-            .select('id, title, category, application_end_date')
-            .eq('is_active', true)
-            .order('application_end_date', { ascending: true, nullsFirst: false })
-            .limit(120);
-        setAnnouncementList(data || []);
-    };
+    // 輸入框被清空（送出或清除對話）時一併收起選單
+    useEffect(() => { if (!input) setMentionQuery(null); }, [input]);
 
-    const mentionMatches = mentionQuery !== null && announcementList
-        ? announcementList.filter(a => !mentionQuery || a.title.includes(mentionQuery)).slice(0, 8)
-        : [];
+    // 公告搜尋（伺服器端模糊比對，見 lib/announcementSearch）
+    useEffect(() => {
+        if (mentionQuery === null) return;
+        let cancelled = false;
+        const q = mentionQuery.trim();
+        const timer = setTimeout(async () => { // 打字期間去抖
+            const rows = await searchAnnouncements(q, { defaultScope: 'upcoming' });
+            if (!cancelled) setMentionMatches(rows);
+        }, q ? 180 : 0);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [mentionQuery]);
 
     const onFormSubmit = (e) => {
         e?.preventDefault();
         if ((!input?.trim() && !attachment) || isLoading) return;
+        setMentionQuery(null); // 送出後收起公告選單
         if (typeof handleSubmit === 'function') handleSubmit(e);
     };
 
@@ -66,8 +69,8 @@ const ChatInput = ({
         const caretText = e.target.value.slice(0, e.target.selectionStart ?? e.target.value.length);
         const m = caretText.match(/@([^@\s]*)$/);
         if (m) {
+            if (m[1] !== mentionQuery) setMentionMatches(null); // 換關鍵字先進入載入中
             setMentionQuery(m[1]);
-            ensureAnnouncements();
         } else {
             setMentionQuery(null);
         }
@@ -75,7 +78,7 @@ const ChatInput = ({
 
     const handleKeyDown = (e) => {
         if (e.key === 'Escape' && mentionQuery !== null) { e.preventDefault(); setMentionQuery(null); return; }
-        if (mentionQuery !== null && mentionMatches.length > 0) {
+        if (mentionQuery !== null && mentionMatches?.length > 0) {
             if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return; }
             if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return; }
             if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectAnnouncement(mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)]); return; }
@@ -86,17 +89,36 @@ const ChatInput = ({
         }
     };
 
+    /**
+     * 輸入框不自行捲動：高度跟著內容長，由容器一起變高。
+     * 只有長到超過半個視窗高度（貼上整份文件）才讓它捲動，否則會把對話區擠光。
+     */
     const adjustHeight = (target) => {
         if (!target) return;
+        const cap = Math.max(160, Math.round(window.innerHeight * 0.5));
         target.style.height = 'auto';
-        target.style.height = Math.min(target.scrollHeight, 128) + 'px';
+        const next = Math.min(target.scrollHeight, cap);
+        target.style.height = next + 'px';
+        target.style.overflowY = target.scrollHeight > cap ? 'auto' : 'hidden';
     };
+
+    // 外部改動輸入內容（送出後清空、點建議填入）時同步高度
+    useEffect(() => { adjustHeight(textareaRef.current); }, [input]);
+
+    // 點擊建議問題：帶入輸入框後聚焦，讓使用者能先改寫再送出
+    useEffect(() => {
+        if (!focusSignal) return;
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+    }, [focusSignal]);
 
     const handleFilePick = (file) => {
         setAttachError('');
         if (!file) return;
         if (!ATTACH_MIME.includes(file.type)) { setAttachError('僅支援 PDF、圖片或純文字檔'); return; }
-        if (file.size > MAX_ATTACH_SIZE) { setAttachError('檔案需小於 5MB'); return; }
+        if (file.size > MAX_ATTACH_SIZE) { setAttachError('檔案需小於 10MB'); return; }
         const reader = new FileReader();
         reader.onload = () => {
             const base64 = String(reader.result).split(',')[1] || '';
@@ -134,7 +156,7 @@ const ChatInput = ({
             {/* Input Form：膠囊造型 */}
             <form
                 onSubmit={onFormSubmit}
-                className={`relative flex items-end gap-1 sm:gap-1.5 p-1.5 sm:p-2 rounded-full bg-surface border transition-all duration-300 shadow-sm
+                className={`relative flex items-end gap-1 sm:gap-1.5 p-1.5 sm:p-2 rounded-3xl bg-surface border transition-all duration-300 shadow-sm
                     ${isLoading ? 'border-line bg-page' : 'border-line hover:border-line-strong focus-within:ring-0'}
                     ${!isLoading && 'has-[:focus-visible]:border-primary has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-primary/10 has-[:focus-visible]:shadow-md'}
                 `}
@@ -146,7 +168,7 @@ const ChatInput = ({
                             <Megaphone size={11} aria-hidden="true" />指定公告啟用文件檢核{mentionQuery ? `：「${mentionQuery}」` : ''}
                         </p>
                         <div className="max-h-64 overflow-y-auto">
-                            {announcementList === null ? (
+                            {mentionMatches === null ? (
                                 <p className="px-3.5 py-3 text-sm text-ink-soft flex items-center gap-2"><Loader2 size={13} className="animate-spin" />載入公告中…</p>
                             ) : mentionMatches.length === 0 ? (
                                 <p className="px-3.5 py-3 text-sm text-ink-soft">找不到符合的公告</p>
@@ -167,20 +189,20 @@ const ChatInput = ({
                     </div>
                 )}
 
-                <div className="pl-2 sm:pl-3 pb-2 sm:pb-3 text-primary">
+                <div className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center text-primary">
                     <Sparkles size={18} className={`sm:w-5 sm:h-5 ${isLoading ? 'animate-pulse' : ''}`} />
                 </div>
 
                 <textarea
+                    ref={textareaRef}
                     value={input}
                     onChange={onChangeWithMention}
                     onKeyDown={handleKeyDown}
-                    placeholder="詢問獎學金相關問題…（@ 指定公告可啟用文件檢核）"
+                    placeholder="詢問獎學金問題…（@ 指定公告）"
                     aria-label="您的訊息"
                     title="請輸入您的問題"
                     rows={1}
-                    className="w-full max-h-32 bg-transparent border-0 py-2 sm:py-3 px-1 sm:px-2 text-sm sm:text-base text-ink placeholder-gray-400 focus:!ring-0 focus:!outline-none !outline-none resize-none custom-scrollbar leading-relaxed"
-                    style={{ minHeight: '38px' }}
+                    className="w-full min-h-9 sm:min-h-10 bg-transparent border-0 py-1.5 sm:py-2 px-1 sm:px-2 text-sm sm:text-base text-ink placeholder-gray-400 focus:!ring-0 focus:!outline-none !outline-none resize-none overflow-hidden custom-scrollbar leading-relaxed"
                 />
 
                 {/* 附件上傳 */}
@@ -191,8 +213,8 @@ const ChatInput = ({
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isLoading}
                     aria-label="上傳文件（自傳、計畫書、公文）"
-                    title="上傳文件（PDF / 圖片 / 純文字，≤5MB）"
-                    className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 mb-0.5 sm:mb-1 flex items-center justify-center rounded-full text-ink-soft/60
+                    title="上傳文件（PDF / 圖片 / 純文字，≤10MB）"
+                    className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full text-ink-soft/60
                         hover:text-primary hover:bg-primary-tint transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                     <Paperclip size={16} className="sm:w-[17px] sm:h-[17px]" />
@@ -205,7 +227,7 @@ const ChatInput = ({
                         disabled={isLoading}
                         aria-label="清除對話紀錄"
                         title="清除對話紀錄"
-                        className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 mb-0.5 sm:mb-1 flex items-center justify-center rounded-full text-ink-soft/60
+                        className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full text-ink-soft/60
                             hover:text-danger hover:bg-danger/10 transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         <Trash2 size={16} className="sm:w-[17px] sm:h-[17px]" />
@@ -216,7 +238,7 @@ const ChatInput = ({
                     type="submit"
                     disabled={isLoading || (!input?.trim() && !attachment)}
                     aria-label="傳送訊息"
-                    className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 mb-0.5 sm:mb-1 flex items-center justify-center rounded-full bg-primary text-white transition-all
+                    className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-primary text-white transition-all
                         hover:bg-primary-hover active:scale-95 disabled:bg-surface-hover disabled:text-ink-soft/60 disabled:cursor-not-allowed disabled:active:scale-100 relative"
                 >
                     <Send size={16} className={`sm:w-[18px] sm:h-[18px] ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity`} />

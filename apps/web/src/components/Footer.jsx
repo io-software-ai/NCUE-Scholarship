@@ -45,10 +45,10 @@ export default function Footer() {
 
             <footer className="bg-footer border-t border-white/5 text-white py-8 sm:py-10 select-none">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-y-8 gap-x-8 lg:gap-x-12 sm:grid-cols-2 lg:grid-cols-3">
 
                         {/* --- 關於平台 --- */}
-                        <div className="text-center sm:text-left">
+                        <div className="text-center sm:text-left max-w-sm mx-auto sm:mx-0 w-full">
                             <div className="inline-block mb-3 sm:mb-4">
                                 <h3 className="text-lg font-bold text-white">
                                     關於平台
@@ -67,7 +67,7 @@ export default function Footer() {
                         </div>
 
                         {/* --- 相關資源 --- */}
-                        <div className="text-center sm:text-left">
+                        <div className="text-center sm:text-left max-w-sm mx-auto sm:mx-0 w-full">
                             <div className="inline-block mb-3 sm:mb-4">
                                 <h3 className="text-lg font-bold text-white">
                                     相關資源
@@ -105,7 +105,7 @@ export default function Footer() {
                         </div>
 
                         {/* --- 平台開發與維護 --- */}
-                        <div className="text-center sm:text-left sm:col-span-2 lg:col-span-1">
+                        <div className="text-center sm:text-left sm:col-span-2 lg:col-span-1 max-w-sm mx-auto sm:mx-0 w-full">
                             <div className="inline-block mb-3 sm:mb-4">
                                 <h3 className="text-lg font-bold text-white">
                                     平台開發與維護

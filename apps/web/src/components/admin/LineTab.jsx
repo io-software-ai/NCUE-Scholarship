@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { authFetch } from '@/lib/authFetch';
-import { supabase } from '@/lib/supabase/client';
+import { searchAnnouncements } from '@/lib/announcementSearch';
 import CategoryBadge from '@/components/ui/CategoryBadge';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import Toast from '@/components/ui/Toast';
@@ -136,19 +136,20 @@ export default function LineTab() {
     const [mentionQuery, setMentionQuery] = useState(null);   // null = 關閉;字串 = 過濾關鍵字
     const [mentionIndex, setMentionIndex] = useState(0);      // 鍵盤上下選擇的索引
     useEffect(() => { setMentionIndex(0); }, [mentionQuery]);
-    const [announcementList, setAnnouncementList] = useState(null); // null = 未載入
+    const [mentionMatches, setMentionMatches] = useState(null); // null = 載入中
     const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
 
-    const ensureAnnouncements = useCallback(async () => {
-        if (announcementList !== null) return;
-        const { data } = await supabase
-            .from('announcements')
-            .select('id, title, category, application_end_date')
-            .eq('is_active', true)
-            .order('created_at', { ascending: false })
-            .limit(100);
-        setAnnouncementList(data || []);
-    }, [announcementList]);
+    // 公告搜尋（伺服器端模糊比對，見 lib/announcementSearch）
+    useEffect(() => {
+        if (mentionQuery === null) return;
+        let cancelled = false;
+        const q = mentionQuery.trim();
+        const timer = setTimeout(async () => { // 打字期間去抖
+            const rows = await searchAnnouncements(q, { defaultScope: 'recent' });
+            if (!cancelled) setMentionMatches(rows);
+        }, q ? 180 : 0);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [mentionQuery]);
 
     const handleReplyChange = (e) => {
         const value = e.target.value;
@@ -158,16 +159,12 @@ export default function LineTab() {
         const before = value.slice(0, caret);
         const match = before.match(/@([^@\s]*)$/);
         if (match) {
+            if (match[1] !== mentionQuery) setMentionMatches(null); // 換關鍵字先進入載入中
             setMentionQuery(match[1]);
-            ensureAnnouncements();
         } else {
             setMentionQuery(null);
         }
     };
-
-    const mentionMatches = mentionQuery !== null && announcementList
-        ? announcementList.filter(a => !mentionQuery || a.title.includes(mentionQuery)).slice(0, 8)
-        : [];
 
     const handleSendAnnouncement = async (announcement) => {
         if (!selectedUser || isSendingAnnouncement) return;
@@ -702,7 +699,7 @@ export default function LineTab() {
                                                         <Megaphone size={11} aria-hidden="true" />插入公告{mentionQuery ? `：「${mentionQuery}」` : ''}
                                                     </p>
                                                     <div className="max-h-64 overflow-y-auto">
-                                                        {announcementList === null ? (
+                                                        {mentionMatches === null ? (
                                                             <p className="px-3.5 py-3 text-sm text-ink-soft flex items-center gap-2"><Loader2 size={13} className="animate-spin" />載入公告中…</p>
                                                         ) : mentionMatches.length === 0 ? (
                                                             <p className="px-3.5 py-3 text-sm text-ink-soft">找不到符合的公告</p>
@@ -728,7 +725,7 @@ export default function LineTab() {
                                                 onChange={handleReplyChange}
                                                 onKeyDown={e => {
                                                     if (e.key === 'Escape' && mentionQuery !== null) { e.preventDefault(); setMentionQuery(null); return; }
-                                                    if (mentionQuery !== null && mentionMatches.length > 0) {
+                                                    if (mentionQuery !== null && mentionMatches?.length > 0) {
                                                         if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return; }
                                                         if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return; }
                                                         if (e.key === 'Enter') { e.preventDefault(); handleSendAnnouncement(mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)]); return; }

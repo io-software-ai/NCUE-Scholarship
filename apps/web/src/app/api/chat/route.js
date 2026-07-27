@@ -7,8 +7,14 @@ import { getSystemConfig } from '@/lib/config'
 import { runScholarshipAgent } from '@/lib/ai/agent'
 import { buildReviewContext } from '@/lib/ai/reviewGuide'
 
+/** 提問帶有「填寫／送件／檢核文件」意圖時，自動帶入承辦端的查核重點 */
+const REVIEW_INTENT = /檢核|檢查|審核|複審|退件|補件|申請書|申請表|報名表|自傳|讀書計畫|計畫書|推薦函|家庭狀況|經濟狀況|班排|排名|百分比|怎麼填|如何填|填寫|填錯|要附|應附|應備|附上什麼|需要準備|文件齊全|修改建議|潤稿|優化|幫我看|幫我改/;
+
 async function saveHistory(userId, sessionId, userMessage, aiResponse) {
     try {
+        // 記憶庫提議是「當下這回合」的一次性動作，不留在歷史裡，
+        // 否則重新整理後同一張同意卡會再出現一次（可能重複寫入）。
+        aiResponse = aiResponse.replace(/\[MEMORY_CONFIRM:[^\]]*\]/g, '').trimEnd();
         await supabase.from('chat_history').insert([
             { user_id: userId, session_id: sessionId, role: 'user', message_content: userMessage, timestamp: new Date().toISOString() },
             { user_id: userId, session_id: sessionId, role: 'model', message_content: aiResponse, timestamp: new Date().toISOString() }
@@ -49,6 +55,10 @@ export async function POST(request) {
         const sessionId = providedSessionId || crypto.randomUUID();
         const userId = authCheck.user.id;
 
+        // 附件抽取前的原始輸入（存入歷史用）；前端顯示用的（附件：…）標記先去掉避免重複
+        const originalUserText = userMessage.replace(/\n*（附件：[^）]*）\s*$/, '').trim();
+        let attachmentLabel = '';
+
         // 組合對話歷史（若前端只送單句，補上最新提問）
         let history = Array.isArray(messages) && messages.length > 0
             ? messages
@@ -62,10 +72,11 @@ export async function POST(request) {
             if (!ALLOWED_MIME.includes(attachment.mimeType)) {
                 return NextResponse.json({ error: '不支援的檔案類型（僅限 PDF / 圖片 / 純文字）' }, { status: 400 });
             }
-            if (attachment.data.length * 0.75 > 6 * 1024 * 1024) {
-                return NextResponse.json({ error: '檔案需小於 5MB' }, { status: 400 });
+            if (attachment.data.length * 0.75 > 11 * 1024 * 1024) {
+                return NextResponse.json({ error: '檔案需小於 10MB' }, { status: 400 });
             }
             let extracted = '';
+            let extractError = '';
             try {
                 if (attachment.mimeType === 'text/plain') {
                     extracted = Buffer.from(attachment.data, 'base64').toString('utf8');
@@ -73,29 +84,49 @@ export async function POST(request) {
                     const geminiKey = await getSystemConfig('GEMINI_API_KEY');
                     const { GoogleGenAI } = await import('@google/genai');
                     const extractorAi = new GoogleGenAI({ apiKey: geminiKey });
-                    const r = await extractorAi.models.generateContent({
+                    const extract = () => extractorAi.models.generateContent({
                         model: 'gemini-3.6-flash',
                         contents: [{ parts: [
                             { inlineData: { mimeType: attachment.mimeType, data: attachment.data } },
                             { text: '請將此文件內容完整轉為純文字，保留段落與條列結構；不要加入任何評論或摘要。' },
                         ] }],
                     });
+                    let r;
+                    try {
+                        r = await extract();
+                    } catch (first) {
+                        // 大檔抽取偶發 503/逾時，重試一次再放棄
+                        console.warn('[Chat] Attachment extract retry after:', first?.message);
+                        await new Promise(res => setTimeout(res, 1200));
+                        r = await extract();
+                    }
                     extracted = (r.text || '').trim();
                 }
             } catch (e) {
-                console.warn('[Chat] Attachment extract failed:', e.message);
+                extractError = e?.message || String(e);
+                console.error('[Chat] Attachment extract failed:', attachment.name, extractError);
             }
             extracted = extracted.slice(0, 8000);
             if (!extracted) {
-                return NextResponse.json({ error: '無法讀取此文件內容，請改用文字貼上' }, { status: 422 });
+                return NextResponse.json({
+                    error: extractError
+                        ? `無法讀取此文件內容（${extractError.slice(0, 120)}），請改用文字貼上或縮小檔案後重試`
+                        : '無法讀取此文件內容（可能是掃描件或空白檔），請改用文字貼上',
+                }, { status: 422 });
             }
-            userMessage = `${userMessage}\n\n【使用者上傳文件「${String(attachment.name || '文件').slice(0, 80)}」內容】\n${extracted}`;
+            attachmentLabel = String(attachment.name || '文件').slice(0, 80);
+            userMessage = `${userMessage}\n\n【使用者上傳文件「${attachmentLabel}」內容】\n${extracted}`;
             history = [...history.slice(0, -1), { role: 'user', content: userMessage }];
         }
 
-        // ── 文件檢核模式：使用者選擇「文件檢核」或以「@」指定公告 ──
-        // 檢核基準 = 承辦人員實務查核點（reviewGuide）+ 該獎學金專屬重點 + 指定公告內容
-        const isReviewMode = body.mode === 'review' || !!reviewAnnouncementId;
+        // ── 文件檢核模式 ──
+        // 網頁端不再有模式切換鈕：由提問內容自動判斷；App 仍可用 body.mode 明示。
+        // 上傳附件或以「@」指定公告一律視為檢核（這兩種操作本身就是要檢核文件）。
+        const isReviewMode =
+            body.mode === 'review' ||
+            !!reviewAnnouncementId ||
+            !!attachment?.data ||
+            (body.mode !== 'general' && REVIEW_INTENT.test(userMessage));
         let reviewContext = '';
         if (isReviewMode) {
             let kb = null;
@@ -199,7 +230,11 @@ export async function POST(request) {
                     }
 
                     if (fullText) {
-                        saveHistory(userId, sessionId, userMessage, fullText + disclaimer);
+                        // 對話紀錄存原始提問 + 附件檔名（抽取出的文件全文不落庫，見條款第九條）
+                        const historyUserMessage = attachmentLabel
+                            ? `${originalUserText}\n\n（附件：${attachmentLabel}）`.trim()
+                            : userMessage;
+                        saveHistory(userId, sessionId, historyUserMessage, fullText + disclaimer);
                     }
                 } catch (err) {
                     console.error('[Chat] Agent error:', err);

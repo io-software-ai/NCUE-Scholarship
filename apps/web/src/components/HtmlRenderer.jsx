@@ -21,7 +21,13 @@ const HtmlRenderer = ({ content, isUser = false }) => {
     // 移除多餘的 br 標籤，並處理可能的特殊分隔線字符
     const processedContent = content
         .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/\\n/g, '\n');
+        .replace(/\\n/g, '\n')
+        // 模型偶爾把 HTML 包進 ``` 圍欄 → 會被當成程式碼區塊渲染（橫向爆版）。
+        // 僅在圍欄內容含 HTML 標籤時解開，真正的程式碼區塊保持原樣。
+        .replace(/```(?:html)?\s*\n?([\s\S]*?)```/gi, (m, code) => (/<\/?[a-z][^>]*>/i.test(code) ? code : m))
+        // 串流途中／結尾殘留的單邊圍欄
+        .replace(/^\s*```(?:html)?\s*\n?/i, '')
+        .replace(/\n?```\s*$/, '');
 
     const cleanContent = DOMPurify.sanitize(processedContent, {
         ADD_ATTR: ['style', 'class', 'target'],
@@ -40,6 +46,8 @@ const HtmlRenderer = ({ content, isUser = false }) => {
             prose-table:border prose-table:border-line prose-table:rounded-lg
             prose-th:bg-page prose-th:px-3 prose-th:py-2 prose-th:text-ink
             prose-td:px-3 prose-td:py-2 prose-td:border-t prose-td:border-line
+            prose-pre:whitespace-pre-wrap prose-pre:break-words prose-pre:text-[12.5px]
+            prose-code:break-words
             prose-hr:hidden
         `}>
             <ReactMarkdown 

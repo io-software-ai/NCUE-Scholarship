@@ -5,7 +5,7 @@ import HtmlRenderer from '@/components/HtmlRenderer';
 import AnnouncementCard from './AnnouncementCard';
 import { authFetch } from '@/lib/authFetch';
 import Link from 'next/link';
-import { Sparkles, Bot, ChevronDown, ChevronUp, BrainCircuit, Search, Loader2, Check, Wrench, BellRing, ThumbsUp, ThumbsDown, Database, X } from 'lucide-react';
+import { Sparkles, Bot, ChevronDown, ChevronUp, BrainCircuit, Search, Loader2, Check, Wrench, BellRing, ThumbsUp, ThumbsDown, Database, X, Paperclip } from 'lucide-react';
 
 /**
  * AI 回覆回饋（👍 / 👎）：協助平台找出知識缺口。
@@ -424,11 +424,26 @@ const MessageBubble = ({ message, user, isLoading = false, isStreaming = false, 
         }
     } catch (e) { /* ignore */ }
 
+    /**
+     * 使用者訊息中的附件呈現：
+     * - 新格式：「（附件：檔名）」
+     * - 舊紀錄：整份抽取的文件全文（【使用者上傳文件「檔名」內容】…）→ 內文不顯示，只留檔名
+     */
+    const extractAttachment = (text) => {
+        const legacy = text.match(/\n*【使用者上傳文件「([^」]+)」內容】[\s\S]*$/);
+        if (legacy) return { name: legacy[1], text: text.slice(0, legacy.index).trim() };
+        const tagged = text.match(/\n*（附件：([^）]+)）\s*$/);
+        if (tagged) return { name: tagged[1], text: text.slice(0, tagged.index).trim() };
+        return { name: null, text };
+    };
+
     // Parse announcement cards
     const cardRegex = /\[ANNOUNCEMENT_CARD:([\w,-]+)\]/g;
     let rawAnnouncementIds = [];
     
     let messageContent = message.content || '';
+    const attachmentInfo = isUser ? extractAttachment(messageContent) : { name: null, text: messageContent };
+    messageContent = attachmentInfo.text;
 
     const mainContentFiltered = messageContent.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<think>[\s\S]*/, '').trim();
 
@@ -500,6 +515,14 @@ const MessageBubble = ({ message, user, isLoading = false, isStreaming = false, 
                     <ThoughtSection content={messageContent} reasoning={message.reasoning} hasFormalContent={!!parsedContent} isStreaming={isLoading} />
                 )}
 
+                {/* 附件：只顯示檔名，不顯示抽取出的文件全文（含個資） */}
+                {isUser && attachmentInfo.name && (
+                    <div className="mb-1.5 inline-flex items-center gap-2 max-w-full px-3 py-2 rounded-xl bg-surface border border-line">
+                        <Paperclip size={14} className="flex-shrink-0 text-ink-soft" aria-hidden="true" />
+                        <span className="text-[13px] text-ink truncate" title={attachmentInfo.name}>{attachmentInfo.name}</span>
+                    </div>
+                )}
+
                 {/* 主對話框 */}
                 {parsedContent ? (
                     <div className={`relative text-[15px] leading-relaxed break-words
@@ -523,8 +546,8 @@ const MessageBubble = ({ message, user, isLoading = false, isStreaming = false, 
                                     <SubscribeConfirmButton proposal={subscribeProposal} />
                                 )}
 
-                                {/* 記憶庫提議：串流結束後才顯示，避免標記邊串流邊被解析成半截項目 */}
-                                {!isUser && !isLoading && memoryProposal && (
+                                {/* 記憶庫提議：串流結束後才顯示；歷史訊息不再顯示（避免重整後重複詢問） */}
+                                {!isUser && !isLoading && memoryProposal && !message.fromHistory && (
                                     <MemoryConsentCard items={memoryProposal} />
                                 )}
 
