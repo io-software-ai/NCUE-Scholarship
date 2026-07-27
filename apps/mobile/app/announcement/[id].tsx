@@ -1,5 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, ScrollView, Linking, Share, Pressable, Modal, useWindowDimensions } from 'react-native';
+// 換頁分頁器用 gesture-handler 版 ScrollView：內文寬表格才能用 blocksExternalGesture
+// 在原生層攔下換頁手勢（見 src/lib/pagerLock.tsx）。ref 仍可呼叫 scrollTo。
+import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import { Text, ActivityIndicator, Button, Divider } from 'react-native-paper';
 import { useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -110,6 +113,7 @@ function Pager({ list, startId }: { list: string[]; startId: string }) {
   const [pagerH, setPagerH] = useState(0);
   // 內文裡的寬表格橫向捲動時，暫時關閉換頁，避免水平手勢被搶去切換公告
   const [pagerScroll, setPagerScroll] = useState(true);
+  const pagerRef = useRef<any>(null);
 
   // 位置指示只在進頁／換頁時短暫出現，之後自動淡出（不常駐擋內容）
   const hint = useSharedValue(0);
@@ -133,7 +137,8 @@ function Pager({ list, startId }: { list: string[]; startId: string }) {
       style={{ flex: 1, backgroundColor: theme.colors.background }}
       onLayout={(e) => setPagerH(Math.round(e.nativeEvent.layout.height))}
     >
-      <ScrollView
+      <GestureScrollView
+        ref={pagerRef}
         horizontal
         pagingEnabled
         scrollEnabled={pagerScroll}
@@ -142,7 +147,7 @@ function Pager({ list, startId }: { list: string[]; startId: string }) {
         scrollEventThrottle={16}
         contentOffset={{ x: index * width, y: 0 }}
       >
-        <PagerLockProvider value={setPagerScroll}>
+        <PagerLockProvider setScrollEnabled={setPagerScroll} pagerRef={pagerRef}>
           {list.map((annId, i) => (
             <View key={annId} style={{ width, height: pagerH || height }}>
               {/* 開窗：只掛載目前 ±1 頁；其餘留空占位（拖曳單次最多到相鄰頁，看不到占位） */}
@@ -150,7 +155,7 @@ function Pager({ list, startId }: { list: string[]; startId: string }) {
             </View>
           ))}
         </PagerLockProvider>
-      </ScrollView>
+      </GestureScrollView>
 
       {/* 位置指示：進頁／換頁時短暫顯示後自動淡出 */}
       <Animated.View

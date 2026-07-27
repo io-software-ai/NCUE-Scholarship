@@ -1,10 +1,13 @@
 /**
  * 左右換頁分頁器（Google app 式）：橫向 pagingEnabled ScrollView 同時掛載 4 個分頁，
  * 拖曳即時預覽相鄰頁、放開自動吸附；底部膠囊即時跟隨捲動位置滑動。
- * 用 RN 內建 ScrollView（非 pager-view 原生模組，dev client 直接可用）。
+ * 用 gesture-handler 的 ScrollView（非 pager-view 原生模組，dev client 直接可用）。
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { View, ScrollView, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+// gesture-handler 版 ScrollView：分頁內容裡的橫向捲動區（AI 回覆的寬表格）才能用
+// blocksExternalGesture 在原生層攔下換頁手勢（見 src/lib/pagerLock.tsx）。
+import { ScrollView } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 import { useLocalSearchParams } from 'expo-router';
 import { Newspaper, Sparkles, Bell, Settings } from 'lucide-react-native';
@@ -42,7 +45,8 @@ export default function TabsPager() {
 function PagerInner() {
   const theme = useAppTheme();
   const { width } = useWindowDimensions();
-  const scrollRef = useRef<ScrollView>(null);
+  // gesture-handler 包裝後的 ref：同時具備 scrollTo 與 handlerTag（供內層 blocksExternalGesture）
+  const scrollRef = useRef<any>(null);
   const [index, setIndex] = useState(0);
   const [pagerScroll, setPagerScroll] = useState(true); // 內層橫向捲動（寬表格）期間暫停換頁
   const progress = useSharedValue(0); // 0..count-1 即時頁面位置
@@ -99,7 +103,7 @@ function PagerInner() {
             // 內層垂直清單可正常捲動；橫向手勢才換頁
             style={{ flex: 1 }}
           >
-            <PagerLockProvider value={setPagerScroll}>
+            <PagerLockProvider setScrollEnabled={setPagerScroll} pagerRef={scrollRef}>
               {SCREENS.map((Screen, i) => (
                 <View key={TABS[i].key} style={{ width }}>
                   <Screen active={index === i} />

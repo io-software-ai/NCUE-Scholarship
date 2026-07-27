@@ -8,7 +8,7 @@ import { siteConfig } from '@/lib/siteConfig';
 
 // --- 文件版本資訊（單一來源） ---
 const EFFECTIVE_DATE = '2026 年 5 月 11 日';
-const LAST_UPDATED = '2026 年 7 月 23 日';
+const LAST_UPDATED = '2026 年 7 月 27 日';
 const CONTACT_EMAIL = 'contact@iosoftware.ai';
 
 // --- 動畫設定 ---
@@ -464,7 +464,7 @@ export default function TermsAndPrivacyPage() {
                                     <DataRow category="帳號識別資料" items="姓名（顯示名稱）、電子郵件地址、大頭貼（個資法類別 C001 辨識個人者）" source="Google 帳號授權" />
                                     <DataRow category="學籍補充資料" items="學號、系所、年級等您自行填寫之資料（C011 個人描述）" source="您主動填寫" />
                                     <DataRow category="LINE 整合資料" items="LINE 使用者識別碼、顯示名稱、您與官方帳號之對話訊息" source="您主動綁定 LINE 後" />
-                                    <DataRow category="AI 背景資料" items="您自行填寫、供 AI 助理個人化推薦參考之背景說明（身分別、系所年級、需求描述等，均為選填）" source="您主動填寫（可隨時修改或清除）" />
+                                    <DataRow category="AI 背景資料（記憶庫）" items="供 AI 助理個人化推薦參考之背景說明（身分別、系所年級、需求描述等，均為選填）" source="您主動填寫，或由 AI 助理就您對話中提供之內容提出建議、經您逐次同意後寫入（可隨時修改或清除）" />
                                     <DataRow category="服務使用紀錄" items="AI 對話紀錄、公告訂閱與通知設定、問題回報內容與附圖" source="您使用服務時" />
                                     <DataRow category="系統與安全紀錄" items="IP 位址、登入紀錄、瀏覽與點選紀錄、裝置與瀏覽器資訊" source="系統自動產生" />
                                 </div>
@@ -480,6 +480,7 @@ export default function TermsAndPrivacyPage() {
                                     <li><strong>利用方式</strong>：以自動化系統於前述目的範圍內處理與利用，不進行造成法律效果之純自動化決策。</li>
                                     <li><strong>AI 對話處理</strong>：您與 AI 助理之對話內容（含經您綁定後之 LINE 對話）會傳送至 Google Gemini API 以生成回覆。依 Google 之 API 資料使用政策，透過付費 API 提交之內容<strong>不會被用於訓練其公開模型</strong>；本平台亦不會將您的帳號識別資料（如 Email、學號）附加於 AI 請求中。請避免於對話中提供病歷、犯罪前科等特種個人資料或無關之第三人個資。</li>
                                     <li><strong>AI 背景資料與對話中上傳之文件</strong>：您於「個資管理」自填之背景資料，會於每次 AI 對話（含 LINE）自動提供給模型作為個人化推薦依據，您可隨時修改或清除，清除後即不再使用。您於 AI 對話中上傳之文件（如自傳、計畫書、公文）僅用於<strong>當次對話</strong>之分析與建議，內容經模型處理後即不留存原始檔案，亦不用於模型訓練。</li>
+                                    <li><strong>AI 助理提議之背景資料（記憶庫）</strong>：當您於對話中主動提供可長期沿用的背景（如系所年級、身分別、需求方向），AI 助理可能<strong>建議</strong>將其加入您的 AI 背景資料，使後續對話無需重複說明。此項採<strong>逐次明確同意</strong>制：助理會先列出擬記錄之項目，僅在您於介面點選同意（或於 LINE 以文字明確同意）後才寫入；您未同意即不寫入，亦不影響其他功能之使用。寫入時僅就您既有內容<strong>整理增補、不覆蓋</strong>，寫入後之完整內容可於「個資管理」頁面隨時查看、修改或清除。助理不會記錄您未提供之推測資訊，亦不會將病歷、犯罪前科等特種個人資料納入建議；若不慎出現，請逕行於該頁面刪除。</li>
                                     <li><strong>絕不出售</strong>：除法律另有規定或配合司法機關依法調查外，我們絕不會將您的個人資料出售、交換、出租或以其他方式提供給任何無關之第三人，亦不進行跨平台廣告追蹤。</li>
                                 </ol>
                             </ContentSection>

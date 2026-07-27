@@ -23,6 +23,13 @@ export const siteConfig = {
         contactName: '陳泰銘',
         contactEmail: '3526ming@gmail.com',
     },
+    /** Android App（Google Play 封閉測試）：需先加入測試群組才看得到商店頁 */
+    android: {
+        packageName: 'org.ncuesa.scholarship',
+        testerGroupUrl: 'https://groups.google.com/g/iosoftware-testing',
+        becomeTesterUrl: 'https://play.google.com/apps/testing/org.ncuesa.scholarship',
+        storeUrl: 'https://play.google.com/store/apps/details?id=org.ncuesa.scholarship',
+    },
     links: {
         studentAffairs: 'https://stuaffweb.ncue.edu.tw',
         lineCommunity: 'https://reurl.cc/L7jGQe',

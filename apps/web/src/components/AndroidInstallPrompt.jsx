@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Smartphone, MonitorSmartphone } from 'lucide-react';
 import IconButton from '@/components/ui/IconButton';
+import PlayStoreGuideModal, { GooglePlayBadge } from '@/components/PlayStoreGuideModal';
 
 export default function AndroidInstallPrompt() {
     const [showPrompt, setShowPrompt] = useState(false);
     const [deferredPrompt, setDeferredPrompt] = useState(null);
+    const [showPlayGuide, setShowPlayGuide] = useState(false);
 
     useEffect(() => {
         // Only run on client side
@@ -68,7 +70,15 @@ export default function AndroidInstallPrompt() {
         sessionStorage.setItem('android-install-prompt-dismissed', 'true');
     };
 
+    // Play 商店為封閉測試，直接連商店會顯示找不到項目，因此改開安裝指引（含三步驟連結）
+    const handleOpenPlayGuide = () => {
+        setShowPrompt(false);
+        sessionStorage.setItem('android-install-prompt-dismissed', 'true');
+        setShowPlayGuide(true);
+    };
+
     return (
+        <>
         <AnimatePresence>
             {showPrompt && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4 pointer-events-none">
@@ -100,10 +110,10 @@ export default function AndroidInstallPrompt() {
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-lg text-ink leading-tight">
-                                        安裝網頁版 App
+                                        安裝 App
                                     </h3>
                                     <p className="text-sm text-ink-soft mt-0.5">
-                                        建議您將本平台加入主畫面以獲得最佳體驗
+                                        本平台已上架 Google Play，安裝 App 可獲得最佳體驗
                                     </p>
                                 </div>
                             </div>
@@ -117,17 +127,27 @@ export default function AndroidInstallPrompt() {
                         </div>
 
                         <div className="space-y-3 relative z-10">
+                            <div className="flex justify-center">
+                                <GooglePlayBadge onClick={handleOpenPlayGuide} className="h-12" label="前往 Google Play 安裝 App" />
+                            </div>
+
+                            <div className="flex items-center gap-3 text-[11px] text-ink-soft/60">
+                                <span className="h-px flex-1 bg-line" />
+                                或
+                                <span className="h-px flex-1 bg-line" />
+                            </div>
+
                             <button
                                 onClick={handleInstallPwa}
-                                className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-primary hover:bg-primary-hover text-white font-medium rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-blue-600/20"
+                                className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-line-strong text-ink font-medium rounded-xl transition-all active:scale-[0.98] hover:bg-surface-hover"
                             >
                                 <MonitorSmartphone size={20} />
-                                <span>立即安裝</span>
+                                <span>安裝網頁版（加到主畫面）</span>
                             </button>
 
                             {!deferredPrompt && (
                                 <p className="text-xs text-center text-ink-soft/60 mt-2">
-                                    若「立即安裝」無反應，請使用瀏覽器選單「加到主畫面」
+                                    若網頁版安裝無反應，請使用瀏覽器選單「加到主畫面」
                                 </p>
                             )}
                         </div>
@@ -135,5 +155,8 @@ export default function AndroidInstallPrompt() {
                 </div>
             )}
         </AnimatePresence>
+
+        <PlayStoreGuideModal isOpen={showPlayGuide} onClose={() => setShowPlayGuide(false)} />
+        </>
     );
 }

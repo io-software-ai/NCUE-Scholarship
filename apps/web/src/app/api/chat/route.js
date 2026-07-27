@@ -5,6 +5,7 @@ import { verifyUserAuth, checkRateLimit, handleApiError } from '@/lib/apiMiddlew
 import { supabaseServer as supabase } from '@/lib/supabase/server'
 import { getSystemConfig } from '@/lib/config'
 import { runScholarshipAgent } from '@/lib/ai/agent'
+import { buildReviewContext } from '@/lib/ai/reviewGuide'
 
 async function saveHistory(userId, sessionId, userMessage, aiResponse) {
     try {
@@ -92,24 +93,23 @@ export async function POST(request) {
             history = [...history.slice(0, -1), { role: 'user', content: userMessage }];
         }
 
-        // ── 「@」指定公告 → 文件檢核模式：以該公告的資格與評選重點為檢核基準 ──
+        // ── 文件檢核模式：使用者選擇「文件檢核」或以「@」指定公告 ──
+        // 檢核基準 = 承辦人員實務查核點（reviewGuide）+ 該獎學金專屬重點 + 指定公告內容
+        const isReviewMode = body.mode === 'review' || !!reviewAnnouncementId;
         let reviewContext = '';
-        if (reviewAnnouncementId) {
-            const { data: kb } = await supabase
-                .from('ai_knowledge').select('title, content')
-                .eq('announcement_id', reviewAnnouncementId).maybeSingle();
-            if (kb) {
-                reviewContext = `## 文件檢核模式（使用者以「@」指定公告）
-目標公告：「${kb.title}」
-請以下方公告內容中的申請資格、評選重點與應繳文件要求為基準，對使用者提供的自傳／讀書計畫／申請文件給出結構化修改建議：
-- 指出缺漏段落、與資格亮點呼應不足之處、字數與格式問題
-- 逐點列出「建議調整」與「原因」，可示範單句層級的改寫
-- 嚴禁代寫整篇文章；保留使用者原意，並明示這是 AI 輔助建議、最終內容應由使用者自行完成
-- 若使用者尚未提供文件內容，請先引導其貼上文字或上傳檔案
-
-### 公告內容（檢核基準）
-${kb.content.slice(0, 5000)}`;
+        if (isReviewMode) {
+            let kb = null;
+            if (reviewAnnouncementId) {
+                const { data } = await supabase
+                    .from('ai_knowledge').select('title, content')
+                    .eq('announcement_id', reviewAnnouncementId).maybeSingle();
+                kb = data;
             }
+            reviewContext = buildReviewContext({
+                announcementTitle: kb?.title || '',
+                announcementContent: kb?.content || '',
+                userText: userMessage,
+            });
         }
 
         // 使用者自填的 AI 背景資料（個資管理），隨每次對話帶入避免重複自我介紹

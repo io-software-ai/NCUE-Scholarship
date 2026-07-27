@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import HtmlRenderer from '@/components/HtmlRenderer';
 import AnnouncementCard from './AnnouncementCard';
 import { authFetch } from '@/lib/authFetch';
-import { Sparkles, Bot, ChevronDown, ChevronUp, BrainCircuit, Search, Loader2, Check, Wrench, BellRing, ThumbsUp, ThumbsDown } from 'lucide-react';
+import Link from 'next/link';
+import { Sparkles, Bot, ChevronDown, ChevronUp, BrainCircuit, Search, Loader2, Check, Wrench, BellRing, ThumbsUp, ThumbsDown, Database, X } from 'lucide-react';
 
 /**
  * AI 回覆回饋（👍 / 👎）：協助平台找出知識缺口。
@@ -103,6 +104,93 @@ const SubscribeConfirmButton = ({ proposal }) => {
             )}
             {status === 'error' && (
                 <p className="mt-1.5 text-xs text-danger">訂閱失敗，請確認已登入後重試，或至公告詳情頁訂閱。</p>
+            )}
+        </div>
+    );
+};
+
+/**
+ * AI 提議「加入記憶庫」後的同意卡片。
+ * 需使用者點擊同意才寫入；寫入為整理增補，既有背景資料不會被覆蓋。
+ */
+const MemoryConsentCard = ({ items }) => {
+    const [status, setStatus] = useState('idle'); // idle | loading | done | error | dismissed
+    const [message, setMessage] = useState('');
+
+    const handleConfirm = async () => {
+        if (status === 'loading' || status === 'done') return;
+        setStatus('loading');
+        try {
+            const res = await authFetch('/api/users/background/merge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data?.error || '加入記憶庫失敗');
+            setMessage(data.message || '已加入記憶庫');
+            setStatus('done');
+        } catch (e) {
+            console.error('[MemoryConsent]', e);
+            setMessage(e.message);
+            setStatus('error');
+        }
+    };
+
+    if (status === 'dismissed') return null;
+
+    return (
+        <div className="mt-3 rounded-xl border border-line bg-page/60 p-3.5">
+            <div className="flex items-center gap-2 text-ink">
+                <Database size={15} className="text-primary flex-shrink-0" aria-hidden="true" />
+                <p className="text-[13px] font-semibold">
+                    {status === 'done' ? '已加入記憶庫' : '要把這些資料加入記憶庫嗎？'}
+                </p>
+            </div>
+
+            <ul className="mt-2 space-y-1">
+                {items.map((item, i) => (
+                    <li key={i} className="flex gap-2 text-[13px] text-ink-soft leading-relaxed">
+                        <span className="text-primary/60" aria-hidden="true">•</span>
+                        <span>{item}</span>
+                    </li>
+                ))}
+            </ul>
+
+            {status === 'done' ? (
+                <p className="mt-2.5 text-xs text-ink-soft">
+                    {message}
+                    <Link href="/profile" className="ml-1 text-primary hover:underline">前往檢視或編輯</Link>
+                </p>
+            ) : (
+                <>
+                    <p className="mt-2.5 text-[11.5px] text-ink-soft/80 leading-relaxed">
+                        同意後會整理併入你的 AI 背景資料（原有內容保留，不會被覆蓋），之後對話自動帶入，可隨時到「個人資料」頁修改或刪除。
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={status === 'loading'}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border border-primary bg-primary text-white dark:text-[#10151B] hover:bg-primary-hover transition-colors duration-150 disabled:opacity-60"
+                        >
+                            {status === 'loading' ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} aria-hidden="true" />}
+                            {status === 'loading' ? '整理中…' : '同意加入'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setStatus('dismissed')}
+                            disabled={status === 'loading'}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium border border-line-strong text-ink hover:bg-surface-hover transition-colors duration-150 disabled:opacity-60"
+                        >
+                            <X size={15} aria-hidden="true" />
+                            不用了
+                        </button>
+                    </div>
+                    {status === 'error' && (
+                        <p className="mt-1.5 text-xs text-danger">{message || '加入失敗，請確認已登入後重試。'}</p>
+                    )}
+                </>
             )}
         </div>
     );
@@ -356,6 +444,17 @@ const MessageBubble = ({ message, user, isLoading = false, isStreaming = false, 
         return '';
     }).trim();
 
+    // Parse memory-consent marker: [MEMORY_CONFIRM:項目1|項目2]
+    let memoryProposal = null;
+    parsedContent = parsedContent.replace(/\[MEMORY_CONFIRM:([^\]]+)\]/g, (match, payload) => {
+        const items = payload.split('|').map(s => s.replace(/^[\s•\-*]+/, '').trim()).filter(Boolean).slice(0, 6);
+        if (items.length > 0) memoryProposal = items;
+        return '';
+    }).trim();
+
+    // 串流途中標記尚未閉合，先隱藏避免原始文字閃現
+    parsedContent = parsedContent.replace(/\[(?:ANNOUNCEMENT_CARD|SUBSCRIBE_CONFIRM|MEMORY_CONFIRM):[^\]]*$/, '').trim();
+
     const announcementIds = [...new Set(rawAnnouncementIds)];
 
     return (
@@ -422,6 +521,11 @@ const MessageBubble = ({ message, user, isLoading = false, isStreaming = false, 
 
                                 {!isUser && subscribeProposal && (
                                     <SubscribeConfirmButton proposal={subscribeProposal} />
+                                )}
+
+                                {/* 記憶庫提議：串流結束後才顯示，避免標記邊串流邊被解析成半截項目 */}
+                                {!isUser && !isLoading && memoryProposal && (
+                                    <MemoryConsentCard items={memoryProposal} />
                                 )}
 
                                 {announcementIds.length > 0 && (

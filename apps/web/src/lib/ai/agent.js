@@ -34,7 +34,13 @@ function buildSystemPrompt(channel) {
 7. 學生的個人狀況（家境、成績、身分別）僅用於推薦合適獎學金，不做其他評論。
 8. 適時提醒平台功能：公告詳情可「訂閱截止提醒」（Email 通知）與「加入 Google 日曆」；綁定 LINE 後也能在 LINE 詢問。
 9. 外部搜尋（web_search / read_webpage）：只有在知識庫與 FAQ 都查無相關資料時才可使用；引用外部資訊時必須附上來源連結，並註明「此為外部網路資訊，請以原始網站公告為準」。
-10. 訂閱截止提醒（subscribe_announcement）：必須先向使用者確認「哪一則公告」與「截止前幾天提醒」（1-14 天，預設 3 天），並取得使用者明確同意（如「好」「確認訂閱」）後才可呼叫；未經同意嚴禁自行訂閱。`;
+10. 訂閱截止提醒（subscribe_announcement）：必須先向使用者確認「哪一則公告」與「截止前幾天提醒」（1-14 天，預設 3 天），並取得使用者明確同意（如「好」「確認訂閱」）後才可呼叫；未經同意嚴禁自行訂閱。
+11. 申請文件問題（get_application_checklist）：使用者問「申請書怎麼填」「要附哪些文件」「為什麼被退件」「自傳／家庭狀況怎麼寫」時，先呼叫此工具取得生輔組承辦端的實際查核重點，再具體回答；能問出是哪一個獎學金就一併傳入名稱。若系統提示中已附「文件檢核模式」區塊，代表檢核重點已在手上，不必重複呼叫。
+12. 記憶庫（save_to_memory）：當使用者在對話中透露可長期沿用的背景（系級年級、身分別、家庭經濟狀況、成績表現、特殊需求、獲獎紀錄等），可主動建議把它加入記憶庫，往後對話與推薦就不必重複自我介紹。規則：
+   - 必須取得使用者明確同意才可寫入；使用者婉拒就不再追問，同一段對話最多提議一次。
+   - 只建議記錄使用者本人主動提供、且對獎學金推薦有幫助的資訊；記憶庫僅整理增補，既有內容不會被覆蓋（可如此向使用者說明）。
+   - 提議時要具體列出「打算記住哪幾項」，每項為精簡的一句陳述，不要夾帶推測或評論。
+   - 使用者若表示要修改或刪除記憶庫內容，請引導至「個人資料」頁的 AI 背景資料自行編輯。`;
 
     if (channel === 'line') {
         return `${base}
@@ -45,6 +51,7 @@ function buildSystemPrompt(channel) {
 - 精簡扼要，盡量控制在 500 字內。
 - 推薦公告時附上完整連結：${appUrl}/?announcement_id=<公告ID>
 - 提議訂閱時，請引導使用者直接回覆「確認訂閱」（或告知想要的提醒天數）表示同意，收到同意後再呼叫 subscribe_announcement。
+- 提議加入記憶庫時，逐項列出要記住的內容並引導使用者回覆「同意」；收到明確同意後才呼叫 save_to_memory（confirmed=true）。
 - 結尾可提醒：詳細資訊與更多公告請至獎助學金資訊平台 ${appUrl}`;
     }
 
@@ -55,6 +62,7 @@ function buildSystemPrompt(channel) {
 - 重要日期、金額以 <strong> 強調。
 - 當回答中推薦了特定公告，請在回答的「最後一行」加上卡片標記，格式：[ANNOUNCEMENT_CARD:公告ID1,公告ID2]（最多 3 筆，ID 必須是工具回傳的 announcement_id UUID）。
 - 當你提議為使用者訂閱某公告的截止提醒時，在回答最後一行加上標記：[SUBSCRIBE_CONFIRM:公告ID:天數]（天數 1-14，預設 3；一次只能一筆）。介面會顯示「確認訂閱」按鈕，由使用者點擊確認——加上標記後就不要再呼叫 subscribe_announcement，除非使用者以文字明確同意。
+- 當你建議把使用者的背景資料加入記憶庫時，在回答最後一行加上標記：[MEMORY_CONFIRM:項目1|項目2]（最多 6 項，以 | 分隔；項目內不可出現 |、[、]）。介面會顯示「加入記憶庫」按鈕，由使用者點擊同意——加上標記後就不要再呼叫 save_to_memory，除非使用者以文字明確同意。
 - 連結一律使用 target="_blank"。`;
 }
 
@@ -129,7 +137,8 @@ export async function runScholarshipAgent({ messages, channel = 'web', userId = 
     let systemInstruction = buildSystemPrompt(channel);
     if (userContext) {
         // 呼叫端自行標註區塊標題（背景資料 / 檢核模式等）
-        systemInstruction += `\n\n${String(userContext).slice(0, 9000)}`;
+        // 上限放寬至 16000：檢核模式會帶入承辦查核通則 + 該獎學金專屬重點 + 公告內容
+        systemInstruction += `\n\n${String(userContext).slice(0, 16000)}`;
     }
     const contents = toGeminiContents(messages);
     if (contents.length === 0) throw new Error('沒有可處理的訊息');
@@ -211,6 +220,7 @@ export async function runScholarshipAgentText({ messages, channel = 'line', user
         text = text
             .replace(/\[ANNOUNCEMENT_CARD:[^\]]*\]/g, '')
             .replace(/\[SUBSCRIBE_CONFIRM:[^\]]*\]/g, '')
+            .replace(/\[MEMORY_CONFIRM:[^\]]*\]/g, '')
             .replace(/<br\s*\/?>/gi, '\n')
             .replace(/<[^>]+>/g, '')
             .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 $2')

@@ -38,6 +38,12 @@ import {
   UserRound,
   Copy,
   RotateCcw,
+  Database,
+  MessagesSquare,
+  ClipboardCheck,
+  ListChecks,
+  PenLine,
+  UsersRound,
 } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -80,12 +86,28 @@ const uuid4 = () =>
  * 歡迎頁預設問題：點擊只「帶入輸入框」不自動送出，使用者可再編輯後送出。
  * hint 僅為卡片上的操作提示，不會被帶進輸入框。
  */
-const SUGGESTIONS: { icon: any; text: string; hint?: string }[] = [
-  { icon: Wallet, text: '有哪些清寒獎學金？' },
-  { icon: CalendarClock, text: '這個月即將截止的有哪些？' },
-  { icon: GraduationCap, text: '低收入戶可以申請什麼？' },
-  { icon: FileSearch, text: '我想申請 xxx，請幫我修改並優化我的申請書', hint: '輸入 @ 選擇獎學金' },
+type AssistantMode = 'general' | 'review';
+
+/** 助理模式：一般問答 vs 依生輔組承辦人員的查核重點檢核申請文件 */
+const MODES: { id: AssistantMode; label: string; icon: any; hint: string }[] = [
+  { id: 'general', label: '一般對話', icon: MessagesSquare, hint: '查詢公告、資格與申請規定' },
+  { id: 'review', label: '文件檢核', icon: ClipboardCheck, hint: '依承辦人員的查核重點檢查申請書與自傳' },
 ];
+
+const SUGGESTIONS: Record<AssistantMode, { icon: any; text: string; hint?: string }[]> = {
+  general: [
+    { icon: Wallet, text: '有哪些清寒獎學金？' },
+    { icon: CalendarClock, text: '這個月即將截止的有哪些？' },
+    { icon: GraduationCap, text: '低收入戶可以申請什麼？' },
+    { icon: FileSearch, text: '我想申請 xxx，請幫我修改並優化我的申請書', hint: '輸入 @ 選擇獎學金' },
+  ],
+  review: [
+    { icon: ListChecks, text: '送件前要檢查哪些欄位才不會被退件？' },
+    { icon: PenLine, text: '我貼上自傳，請幫我看哪裡寫得不夠具體' },
+    { icon: UsersRound, text: '家庭狀況欄位要寫到什麼程度才夠？' },
+    { icon: FileSearch, text: '請依這個獎學金的規定幫我檢核申請書', hint: '輸入 @ 選擇獎學金' },
+  ],
+};
 
 const INPUT_PLACEHOLDER = '輸入 @ 選擇公告或提問…';
 
@@ -105,6 +127,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [mode, setMode] = useState<AssistantMode>('general');
   const [reviewAnn, setReviewAnn] = useState<{ id: string; title: string } | null>(null);
   const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -219,6 +242,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
       messages: [...history, { id: userMsg.id, role: 'user', content: trimmed || shown, createdAt: new Date().toISOString() }],
       sessionId: sessionIdRef.current,
       text: trimmed || shown,
+      mode,
     };
     if (reviewAnn) body.reviewAnnouncementId = reviewAnn.id;
     if (attachment) body.attachment = { name: attachment.name, mimeType: attachment.mimeType, data: attachment.data };
@@ -334,6 +358,44 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
     </View>
   );
 
+  /** 模式切換列：一般對話 / 文件檢核（檢核模式會帶入承辦人員的查核重點） */
+  const ModeBar = () => (
+    <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+      <View
+        className="flex-row"
+        style={{ alignSelf: 'flex-start', padding: 3, borderRadius: 999, backgroundColor: theme.colors.surfaceVariant + '80' }}
+      >
+        {MODES.map(({ id, label, icon: Icon }) => {
+          const on = mode === id;
+          return (
+            <Pressable
+              key={id}
+              onPress={() => setMode(id)}
+              android_ripple={{ color: theme.colors.surfaceVariant, borderless: false }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 14,
+                paddingVertical: 7,
+                borderRadius: 999,
+                backgroundColor: on ? theme.colors.primary : 'transparent',
+              }}
+            >
+              <Icon size={14} color={on ? theme.colors.onPrimary : theme.colors.onSurfaceVariant} />
+              <Text style={{ color: on ? theme.colors.onPrimary : theme.colors.onSurfaceVariant, fontSize: 13, fontWeight: '700' }}>
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11.5, marginTop: 6, opacity: 0.9 }}>
+        {MODES.find((m) => m.id === mode)?.hint}
+      </Text>
+    </View>
+  );
+
   if (!session) {
     return (
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -354,6 +416,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <Header />
+      <ModeBar />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}>
         <FlatList
           ref={listRef}
@@ -372,7 +435,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
           onContentSizeChange={scrollEnd}
           keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<WelcomePane name={session.user.user_metadata?.full_name} onPick={fillInput} />}
+          ListEmptyComponent={<WelcomePane name={session.user.user_metadata?.full_name} onPick={fillInput} mode={mode} />}
         />
 
         {/* 懸浮輸入區 */}
@@ -405,7 +468,7 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
                 alignItems: 'center',
                 borderRadius: 28,
                 backgroundColor: theme.dark ? theme.colors.elevation.level2 : theme.colors.surface,
-                paddingLeft: 10,
+                paddingLeft: 14,
                 paddingRight: 8,
                 paddingVertical: 8,
                 shadowColor: '#0F2137',
@@ -878,7 +941,7 @@ function SendOrb({ active, busy, onPress }: { active: boolean; busy: boolean; on
 
 /* ── 歡迎頁 ────────────────────────────────── */
 
-function WelcomePane({ name, onPick }: { name?: string; onPick: (t: string) => void }) {
+function WelcomePane({ name, onPick, mode }: { name?: string; onPick: (t: string) => void; mode: AssistantMode }) {
   const theme = useAppTheme();
   const first = (name || '').trim().split(/\s+/)[0];
   return (
@@ -888,12 +951,12 @@ function WelcomePane({ name, onPick }: { name?: string; onPick: (t: string) => v
           {first ? `嗨，${first}` : '嗨，你好'}
         </Text>
         <Text style={{ fontSize: 22, fontWeight: '700', color: theme.colors.onSurfaceVariant, marginTop: 2, letterSpacing: -0.3 }}>
-          想找什麼獎學金？
+          {mode === 'review' ? '要檢核哪份申請文件？' : '想找什麼獎學金？'}
         </Text>
       </Animated.View>
 
       <View className="flex-row flex-wrap" style={{ marginTop: 28, gap: 10 }}>
-        {SUGGESTIONS.map(({ icon: Icon, text, hint }, i) => (
+        {SUGGESTIONS[mode].map(({ icon: Icon, text, hint }, i) => (
           <Animated.View key={text} entering={enterUp(150 + i * 80)} style={{ width: '47.8%' }}>
             <Pressable
               onPress={() => onPick(text)}
@@ -931,6 +994,9 @@ function WelcomePane({ name, onPick }: { name?: string; onPick: (t: string) => v
 
 const CARD_RE = /\[ANNOUNCEMENT_CARD:([\w,-]+)\]/g;
 const SUB_RE = /\[SUBSCRIBE_CONFIRM:([\w-]+):(\d+)\]/g;
+const MEM_RE = /\[MEMORY_CONFIRM:([^\]]+)\]/g;
+// 串流途中標記尚未閉合，先隱藏避免原始文字閃現
+const PARTIAL_MARKER_RE = /\[(?:ANNOUNCEMENT_CARD|SUBSCRIBE_CONFIRM|MEMORY_CONFIRM):[^\]]*$/;
 
 function MsgAction({ icon: Icon, label, onPress }: { icon: any; label: string; onPress: () => void }) {
   const theme = useAppTheme();
@@ -971,13 +1037,25 @@ function MessageRow({
 
   const cardIds: string[] = [];
   const subs: { id: string; days: string }[] = [];
+  let memoryItems: string[] = [];
   let raw = msg.content || '';
   let m: RegExpExecArray | null;
   CARD_RE.lastIndex = 0;
   while ((m = CARD_RE.exec(raw))) cardIds.push(...m[1].split(',').map((s) => s.trim()).filter(Boolean));
   SUB_RE.lastIndex = 0;
   while ((m = SUB_RE.exec(raw))) subs.push({ id: m[1], days: m[2] });
-  raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '').replace(CARD_RE, '').replace(SUB_RE, '').trim();
+  MEM_RE.lastIndex = 0;
+  while ((m = MEM_RE.exec(raw))) {
+    const items = m[1].split('|').map((s) => s.replace(/^[\s•\-*]+/, '').trim()).filter(Boolean).slice(0, 6);
+    if (items.length > 0) memoryItems = items;
+  }
+  raw = raw
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(CARD_RE, '')
+    .replace(SUB_RE, '')
+    .replace(MEM_RE, '')
+    .replace(PARTIAL_MARKER_RE, '')
+    .trim();
   const hasContent = raw.length > 0;
   const streamPlain = raw
     .replace(/<br\s*\/?>/gi, '\n')
@@ -1098,6 +1176,10 @@ function MessageRow({
       {subs.map((s, i) => (
         <SubscribeConfirm key={i} announcementId={s.id} days={s.days} session={session} />
       ))}
+      {/* 記憶庫提議：串流結束後才顯示，避免解析到半截標記 */}
+      {!msg.isStreaming && memoryItems.length > 0 ? (
+        <MemoryConsent items={memoryItems} session={session} />
+      ) : null}
 
       {/* 訊息動作：完成後才顯示（複製／重新生成） */}
       {!msg.isStreaming && hasContent ? (
@@ -1143,6 +1225,112 @@ function SubscribeConfirm({ announcementId, days, session }: { announcementId: s
           </Text>
         </Pressable>
       </View>
+    </Animated.View>
+  );
+}
+
+/**
+ * AI 提議「加入記憶庫」後的同意卡片。
+ * 需點擊同意才寫入；寫入為整理增補，個人資料頁既有的背景資料不會被覆蓋。
+ */
+function MemoryConsent({ items, session }: { items: string[]; session: any }) {
+  const theme = useAppTheme();
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error' | 'dismissed'>('idle');
+  const [message, setMessage] = useState('');
+
+  const confirm = async () => {
+    if (!session) {
+      setMessage('請先登入後再加入記憶庫。');
+      setState('error');
+      return;
+    }
+    setState('busy');
+    try {
+      const res = await fetch(`${API}/api/users/background/merge`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || '加入記憶庫失敗');
+      setMessage(data?.message || '已加入記憶庫');
+      setState('done');
+    } catch (e: any) {
+      setMessage(e?.message || '加入記憶庫失敗，請稍後再試。');
+      setState('error');
+    }
+  };
+
+  if (state === 'dismissed') return null;
+
+  return (
+    <Animated.View
+      entering={enterUp()}
+      style={{
+        marginTop: 12,
+        borderRadius: 16,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.outlineVariant,
+        backgroundColor: theme.colors.surfaceVariant + '66',
+        padding: 14,
+      }}
+    >
+      <View className="flex-row items-center" style={{ gap: 7 }}>
+        <Database size={15} color={theme.colors.primary} />
+        <Text style={{ color: theme.colors.onSurface, fontSize: 13.5, fontWeight: '800' }}>
+          {state === 'done' ? '已加入記憶庫' : '要把這些資料加入記憶庫嗎？'}
+        </Text>
+      </View>
+
+      <View style={{ marginTop: 8, gap: 4 }}>
+        {items.map((item, i) => (
+          <View key={i} className="flex-row" style={{ gap: 6 }}>
+            <Text style={{ color: theme.colors.primary, fontSize: 13 }}>•</Text>
+            <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, lineHeight: 20, flex: 1 }}>{item}</Text>
+          </View>
+        ))}
+      </View>
+
+      {state === 'done' ? (
+        <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12, lineHeight: 18, marginTop: 10 }}>
+          {message}可從右上角的「個人背景」檢視或修改。
+        </Text>
+      ) : (
+        <>
+          <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11.5, lineHeight: 17, marginTop: 10, opacity: 0.85 }}>
+            同意後會整理併入你的 AI 背景資料（原有內容保留，不會被覆蓋），之後對話自動帶入，可隨時修改或刪除。
+          </Text>
+          <View className="flex-row items-center" style={{ gap: 8, marginTop: 12 }}>
+            <View style={{ borderRadius: 999, overflow: 'hidden', backgroundColor: theme.colors.primary }}>
+              <Pressable
+                onPress={confirm}
+                disabled={state === 'busy'}
+                android_ripple={{ color: 'rgba(255,255,255,0.24)' }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 15, paddingVertical: 9 }}
+              >
+                {state === 'busy' ? <Spinner color={theme.colors.onPrimary} size={14} /> : <Check size={15} color={theme.colors.onPrimary} />}
+                <Text style={{ color: theme.colors.onPrimary, fontWeight: '700', fontSize: 13.5 }}>
+                  {state === 'busy' ? '整理中…' : '同意加入'}
+                </Text>
+              </Pressable>
+            </View>
+            <View style={{ borderRadius: 999, overflow: 'hidden', backgroundColor: theme.colors.surfaceVariant }}>
+              <Pressable
+                onPress={() => setState('dismissed')}
+                disabled={state === 'busy'}
+                android_ripple={{ color: theme.colors.outlineVariant }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 15, paddingVertical: 9 }}
+              >
+                <X size={15} color={theme.colors.onSurfaceVariant} />
+                <Text style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', fontSize: 13.5 }}>不用了</Text>
+              </Pressable>
+            </View>
+          </View>
+          {state === 'error' ? (
+            <Text style={{ color: theme.tokens.danger, fontSize: 12, marginTop: 8 }}>{message}</Text>
+          ) : null}
+        </>
+      )}
     </Animated.View>
   );
 }

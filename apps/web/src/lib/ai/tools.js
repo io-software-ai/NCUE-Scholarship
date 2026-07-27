@@ -10,6 +10,8 @@ import { load as cheerioLoad } from 'cheerio';
 import { supabaseServer } from '../supabase/server';
 import { getSystemConfig } from '../config';
 import { searchKnowledge, listKnowledge } from './knowledge';
+import { mergeIntoBackground, normalizeMemoryItems } from './memory';
+import { REVIEW_BASE_GUIDE, REVIEW_GUIDE_NAMES, matchScholarshipGuides } from './reviewGuide';
 
 const TAIPEI_TZ = 'Asia/Taipei';
 
@@ -118,6 +120,38 @@ export const toolDeclarations = [
                 days_before: { type: Type.NUMBER, description: '截止日前幾天提醒（1-14，預設 3）' },
             },
             required: ['announcement_id'],
+        },
+    },
+    {
+        name: 'get_application_checklist',
+        description: '取得「申請文件檢核重點」：生輔組承辦人員實際查核的欄位、最常見的填寫錯誤與缺漏（班排百分比、系所全名、戶籍地址、匯款分行、簽名與日期…），以及特定獎學金的專屬應附文件與退件雷點。當使用者問「申請書怎麼填」「要附哪些文件」「為什麼被退件」「自傳／家庭狀況怎麼寫」時呼叫。',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                scholarship_name: {
+                    type: Type.STRING,
+                    description: '獎學金名稱或關鍵字（選填），例如「廣源」「嘉新」「新住民」「崇她」；不填則只回傳共通檢核重點',
+                },
+            },
+        },
+    },
+    {
+        name: 'save_to_memory',
+        description: '將使用者的長期背景資料（系級年級、身分別、家庭經濟狀況、成績表現、特殊需求等）整理後加入「記憶庫」，之後每次對話都會自動帶入，使用者不必重複自我介紹。既有內容只會被整理增補、不會被覆蓋。呼叫前必須先向使用者說明要記住哪些內容並取得明確同意（使用者說「好」「同意」「請記住」等），未經同意嚴禁呼叫。',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                items: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: '要加入記憶庫的項目（1-6 項），每項為精簡的一句陳述，例如「就讀資工系三年級」、「具低收入戶身分」',
+                },
+                confirmed: {
+                    type: Type.BOOLEAN,
+                    description: '使用者是否已明確同意加入記憶庫。未取得同意時不可傳 true。',
+                },
+            },
+            required: ['items', 'confirmed'],
         },
     },
 ];
@@ -337,6 +371,45 @@ const executors = {
             message: `訂閱成功：「${ann.title}」將於截止日前 ${days} 天寄送 Email 提醒。`,
         };
     },
+
+    async get_application_checklist({ scholarship_name } = {}) {
+        const matched = matchScholarshipGuides(String(scholarship_name || ''));
+        return {
+            general_checklist: REVIEW_BASE_GUIDE,
+            scholarship_specific: matched.map(g => ({ name: g.name, checklist: g.content })),
+            available_scholarships: REVIEW_GUIDE_NAMES,
+            note: matched.length === 0 && scholarship_name
+                ? '沒有這個獎學金的專屬檢核重點，請以共通檢核重點回答，並提醒使用者以公告原文為準。'
+                : '這些是生輔組承辦端的實際查核點，回答時要具體指出「哪裡要改、為什麼會被退件」。',
+        };
+    },
+
+    async save_to_memory({ items, confirmed }, context = {}) {
+        if (!context.userId) {
+            return {
+                success: false,
+                message: context.channel === 'line'
+                    ? '使用者尚未綁定平台帳號，無法使用記憶庫。請引導使用者輸入「帳號綁定」完成綁定。'
+                    : '使用者尚未登入，無法使用記憶庫。請引導使用者先登入平台。',
+            };
+        }
+        if (confirmed !== true) {
+            return {
+                success: false,
+                message: '尚未取得使用者同意。請先向使用者說明打算記住哪些內容，等使用者明確同意後再呼叫本工具。',
+            };
+        }
+
+        const cleaned = normalizeMemoryItems(items);
+        if (cleaned.length === 0) return { success: false, message: '沒有可加入記憶庫的內容。' };
+
+        const result = await mergeIntoBackground({ userId: context.userId, items: cleaned });
+        return {
+            success: result.success,
+            saved_items: result.added || [],
+            message: result.message,
+        };
+    },
 };
 
 /**
@@ -380,6 +453,10 @@ export function describeToolCall(name, args = {}) {
         }
         case 'subscribe_announcement':
             return '訂閱截止提醒';
+        case 'get_application_checklist':
+            return args.scholarship_name ? `查詢申請檢核重點：${args.scholarship_name}` : '查詢申請文件檢核重點';
+        case 'save_to_memory':
+            return `整理並加入記憶庫（${(args.items || []).length} 項）`;
         default:
             return `執行 ${name}`;
     }

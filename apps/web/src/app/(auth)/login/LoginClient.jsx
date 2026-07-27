@@ -53,8 +53,8 @@ function loadGisScript() {
 
 /**
  * 登入頁 — Google 單一登入
- * 現代化流程：Google Identity Services 原頁登入（One Tap 浮層 + 官方彈窗按鈕），
- * 未設定 NEXT_PUBLIC_GOOGLE_CLIENT_ID 時自動退回 OAuth 整頁跳轉。
+ * 流程：Google Identity Services 原頁登入 —— 瀏覽器支援 FedCM 時走原生同頁對話框（不另開視窗），
+ * 否則退回 GIS popup；未設定 NEXT_PUBLIC_GOOGLE_CLIENT_ID 或 GIS 載入失敗時自動退回 OAuth 整頁跳轉。
  */
 function LoginContent() {
     const router = useRouter();
@@ -105,16 +105,21 @@ function LoginContent() {
                 await loadGisScript();
                 if (cancelled || !window.google?.accounts?.id) return;
 
+                // FedCM（瀏覽器原生身分 API）可用時，官方按鈕改走瀏覽器內建的同頁對話框，
+                // 不再另開 popup 視窗；瀏覽器或 GIS 不支援時會自動退回 ux_mode: 'popup'。
+                const supportsFedCm = typeof window !== 'undefined' && 'IdentityCredential' in window;
+
                 window.google.accounts.id.initialize({
                     client_id: GOOGLE_CLIENT_ID,
                     callback: handleCredential,
                     nonce: hashedNonce,
                     context: 'signin',
-                    ux_mode: 'popup',
+                    ux_mode: 'popup', // FedCM 不可用時的退路
                     use_fedcm_for_prompt: true,
+                    use_fedcm_for_button: supportsFedCm,
                 });
 
-                // 官方按鈕：popup 模式，在原頁完成登入
+                // 官方按鈕：FedCM 同頁對話框，或退回 popup，皆在原頁完成登入
                 if (gisButtonRef.current) {
                     gisButtonRef.current.innerHTML = '';
                     window.google.accounts.id.renderButton(gisButtonRef.current, {

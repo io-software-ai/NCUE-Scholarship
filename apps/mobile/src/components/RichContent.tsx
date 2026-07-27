@@ -4,8 +4,11 @@
  * 換行、分隔線、圖片，並解碼 HTML 實體（&nbsp; 等）。
  * 來源為 TinyMCE 產生的公告 HTML。
  */
-import React, { useState } from 'react';
-import { View, Image, ScrollView, Linking } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Image, Linking, ScrollView, useWindowDimensions } from 'react-native';
+// 表格的橫向捲動區用 RN ScrollView + GestureDetector(Gesture.Native())：
+// 這是 gesture-handler 讓非 RNGH 元件參與手勢仲裁的官方做法，可 blocksExternalGesture 擋下外層換頁。
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Text } from 'react-native-paper';
 import { parse } from 'node-html-parser';
 import { useAppTheme, type AppTheme } from '../theme';
@@ -233,13 +236,15 @@ function textWidthOf(node: any): number {
 
 function Table({ node, ctx }: { node: any; ctx: Ctx }) {
   const { theme } = ctx;
-  const setPagerScroll = usePagerLock();
-  const [availW, setAvailW] = useState(0);
+  const { setScrollEnabled: setPagerScroll, pagerRef } = usePagerLock();
+  const winW = useWindowDimensions().width;
+  const [measuredW, setMeasuredW] = useState(0);
+  // onLayout 之前先用視窗寬推估（扣掉內文左右 padding），避免首幀誤判為「放得下」而被切掉
+  const availW = measuredW || Math.max(0, winW - 32);
 
   const rows: any[] = node
     .querySelectorAll('tr')
     .filter((tr: any) => tr.childNodes.some((c: any) => isEl(c) && (tagOf(c) === 'td' || tagOf(c) === 'th')));
-  if (rows.length === 0) return null;
 
   const cellsOf = (tr: any): any[] => tr.childNodes.filter((c: any) => isEl(c) && (tagOf(c) === 'td' || tagOf(c) === 'th'));
   const spanOf = (cell: any) => Math.max(1, parseInt(cell.getAttribute('colspan') || '1', 10) || 1);
@@ -278,64 +283,82 @@ function Table({ node, ctx }: { node: any; ctx: Ctx }) {
   const lock = scrollable ? () => setPagerScroll(false) : undefined;
   const unlock = scrollable ? () => setPagerScroll(true) : undefined;
 
+  // 原生層仲裁：手指落在可捲動的表格上時，直接阻止外層換頁手勢啟動。
+  // （單靠上面的 setScrollEnabled 是 React 狀態更新，新架構下可能趕不上手勢判定）
+  const tableGesture = useMemo(() => {
+    const g = Gesture.Native();
+    return scrollable && pagerRef ? g.blocksExternalGesture(pagerRef) : g;
+  }, [scrollable, pagerRef]);
+
+  // 空表格不渲染（放在所有 hook 之後，維持 hook 呼叫順序一致）
+  if (rows.length === 0) return null;
+
+  const table = (
+    <ScrollView
+      horizontal
+      scrollEnabled={scrollable}
+      showsHorizontalScrollIndicator={scrollable}
+      persistentScrollbar={scrollable}
+      onTouchStart={lock}
+      onTouchEnd={unlock}
+      onTouchCancel={unlock}
+      onMomentumScrollEnd={unlock}
+    >
+      <View style={{ width: tableW || undefined, borderWidth: 1, borderColor: theme.colors.outlineVariant, borderRadius: 12, overflow: 'hidden' }}>
+        {rows.map((tr: any, ri: number) => {
+          const cells = cellsOf(tr);
+          const isHead = ri === 0 || cells.some((c) => tagOf(c) === 'th');
+          let colCursor = 0;
+          return (
+            <View
+              key={ri}
+              style={{
+                flexDirection: 'row',
+                backgroundColor: isHead ? theme.colors.surfaceVariant : ri % 2 ? theme.colors.surface : theme.tokens.surfaceHover + '55',
+                borderTopWidth: ri === 0 ? 0 : 1,
+                borderTopColor: theme.colors.outlineVariant,
+              }}
+            >
+              {cells.map((cell: any, ci: number) => {
+                const span = spanOf(cell);
+                const start = colCursor;
+                colCursor += span;
+                return (
+                  <View
+                    key={ci}
+                    style={{
+                      width: widthOfCell(start, span),
+                      flexGrow: 0,
+                      flexShrink: 0,
+                      overflow: 'hidden',
+                      padding: CELL_PAD,
+                      borderLeftWidth: ci === 0 ? 0 : 1,
+                      borderLeftColor: theme.colors.outlineVariant,
+                    }}
+                  >
+                    {renderContainer(cell, { ...ctx, k: `${ctx.k}.${ri}.${ci}` }, {
+                      fontSize: 13.5,
+                      lineHeight: 20,
+                      fontWeight: isHead ? '700' : '400',
+                      color: isHead ? theme.colors.onSurface : theme.colors.onSurfaceVariant,
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+
   return (
-    <View style={{ marginVertical: 10 }} onLayout={(e) => setAvailW(Math.round(e.nativeEvent.layout.width))}>
-      <ScrollView
-        horizontal
-        scrollEnabled={scrollable}
-        showsHorizontalScrollIndicator={scrollable}
-        persistentScrollbar={scrollable}
-        onTouchStart={lock}
-        onTouchEnd={unlock}
-        onTouchCancel={unlock}
-        onMomentumScrollEnd={unlock}
-      >
-        <View style={{ width: tableW || undefined, borderWidth: 1, borderColor: theme.colors.outlineVariant, borderRadius: 12, overflow: 'hidden' }}>
-          {rows.map((tr: any, ri: number) => {
-            const cells = cellsOf(tr);
-            const isHead = ri === 0 || cells.some((c) => tagOf(c) === 'th');
-            let colCursor = 0;
-            return (
-              <View
-                key={ri}
-                style={{
-                  flexDirection: 'row',
-                  backgroundColor: isHead ? theme.colors.surfaceVariant : ri % 2 ? theme.colors.surface : theme.tokens.surfaceHover + '55',
-                  borderTopWidth: ri === 0 ? 0 : 1,
-                  borderTopColor: theme.colors.outlineVariant,
-                }}
-              >
-                {cells.map((cell: any, ci: number) => {
-                  const span = spanOf(cell);
-                  const start = colCursor;
-                  colCursor += span;
-                  return (
-                    <View
-                      key={ci}
-                      style={{
-                        width: widthOfCell(start, span),
-                        flexGrow: 0,
-                        flexShrink: 0,
-                        overflow: 'hidden',
-                        padding: CELL_PAD,
-                        borderLeftWidth: ci === 0 ? 0 : 1,
-                        borderLeftColor: theme.colors.outlineVariant,
-                      }}
-                    >
-                      {renderContainer(cell, { ...ctx, k: `${ctx.k}.${ri}.${ci}` }, {
-                        fontSize: 13.5,
-                        lineHeight: 20,
-                        fontWeight: isHead ? '700' : '400',
-                        color: isHead ? theme.colors.onSurface : theme.colors.onSurfaceVariant,
-                      })}
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })}
-        </View>
-      </ScrollView>
+    // width:'100%' + overflow:hidden：表格再寬也只在自己的捲動區內延伸，不會溢出內文欄寬（爆版）
+    <View
+      style={{ marginVertical: 10, width: '100%', overflow: 'hidden' }}
+      onLayout={(e) => setMeasuredW(Math.round(e.nativeEvent.layout.width))}
+    >
+      {scrollable ? <GestureDetector gesture={tableGesture}>{table}</GestureDetector> : table}
     </View>
   );
 }

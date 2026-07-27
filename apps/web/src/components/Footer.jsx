@@ -5,11 +5,13 @@ import { useState } from 'react';
 import { School, Mail, MessageSquare, Sparkles, Rss } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import FeedbackModal from './FeedbackModal';
+import PlayStoreGuideModal, { GooglePlayBadge } from './PlayStoreGuideModal';
 import { siteConfig } from '@/lib/siteConfig';
 
 export default function Footer() {
     const pathname = usePathname();
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+    const [isPlayGuideOpen, setIsPlayGuideOpen] = useState(false);
 
     // AI 助理頁（全螢幕體驗）與管理後台不顯示 Footer
     if (pathname?.startsWith('/ai-assistant') || pathname?.startsWith('/manage')) return null;
@@ -54,9 +56,12 @@ export default function Footer() {
                                 <div className="w-12 h-0.5 bg-footer-accent mt-2 mx-auto sm:mx-0"></div>
                             </div>
                             <p className="text-white/70 text-sm sm:text-base leading-relaxed">
-                                An intelligent scholarship platform cored by a Multimodal LLM, dynamically analyzing user-provided sources (PDFs, URLs) to achieve automated parsing, data extraction, and summarization.
+                                An AI-native scholarship platform. AI now assists the entire announcement lifecycle, streamlining the work for staff and students alike. A built-in assistant helps students refine their applications (Beta), and our LINE official account brings it to iOS.
                             </p>
-                            <p className="text-white/55 text-xs sm:text-sm mt-3 sm:mt-4">
+                            <p className="text-white/55 text-xs sm:text-sm mt-3 sm:mt-4 leading-relaxed">
+                                Open source under PolyForm Noncommercial · Built with industry partners · Exhibited at COMPUTEX
+                            </p>
+                            <p className="text-white/55 text-xs sm:text-sm mt-2">
                                 LLM powered by <span className="font-medium text-white/70">Gemini 3.6 Flash</span>
                             </p>
                         </div>
@@ -119,6 +124,13 @@ export default function Footer() {
                                             <span className="text-sm sm:text-base font-medium text-white/70 group-hover:text-white footer-link-underline">平台問題回報</span>
                                         </button>
                                     </div>
+                                    <div className="mt-5 flex justify-center sm:justify-start">
+                                        <GooglePlayBadge
+                                            onClick={() => setIsPlayGuideOpen(true)}
+                                            className="h-11"
+                                            ringClass="focus-visible:ring-footer-accent focus-visible:ring-offset-footer"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -133,6 +145,7 @@ export default function Footer() {
             </footer>
 
             <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
+            <PlayStoreGuideModal isOpen={isPlayGuideOpen} onClose={() => setIsPlayGuideOpen(false)} />
         </>
     );
 }
