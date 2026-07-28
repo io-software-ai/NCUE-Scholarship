@@ -48,7 +48,7 @@ export default function GeminiKeyForm({ onSaved, defaultStorage = 'server', subm
         const normalized = normalizeGeminiKey(key);
         setError('');
         if (!isLikelyGeminiKey(normalized)) {
-            setError('金鑰格式看起來不對，請確認是從 Google AI Studio 複製的 AIza… 字串。');
+            setError('金鑰格式看起來不對，請確認已完整複製 Google AI Studio 產生的金鑰（勿含空白或換行）。');
             return;
         }
 
@@ -81,7 +81,7 @@ export default function GeminiKeyForm({ onSaved, defaultStorage = 'server', subm
             <div className="flex items-start gap-2.5 rounded-xl border border-line bg-page/60 px-3.5 py-3">
                 <KeyRound size={14} className="mt-0.5 shrink-0 text-primary" />
                 <p className="text-[12.5px] leading-relaxed text-ink-soft">
-                    還沒有金鑰？到 Google AI Studio 點「Create API key」建立（個人使用有免費額度），複製 <span className="font-mono text-ink">AIza…</span> 開頭的字串貼到下方。
+                    還沒有金鑰？到 Google AI Studio 點「Create API key」建立（個人使用有免費額度），把產生的金鑰完整複製貼到下方。
                     <a
                         href={AI_STUDIO_KEY_URL}
                         target="_blank"
@@ -109,7 +109,7 @@ export default function GeminiKeyForm({ onSaved, defaultStorage = 'server', subm
                     onKeyDown={e => e.key === 'Enter' && !busy && handleSubmit()}
                     autoComplete="off"
                     spellCheck={false}
-                    placeholder="貼上 Gemini API 金鑰（AIza…）"
+                    placeholder="貼上 Gemini API 金鑰"
                     aria-label="Gemini API 金鑰"
                     className="w-full rounded-xl border border-line bg-page px-4 py-3 pr-11 font-mono text-sm text-ink outline-none transition-all focus:border-primary focus:bg-surface focus:ring-4 focus:ring-primary/10"
                 />

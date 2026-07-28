@@ -59,7 +59,7 @@ export function GeminiKeyForm({
     const normalized = normalizeGeminiKey(key);
     setError('');
     if (!isLikelyGeminiKey(normalized)) {
-      setError('金鑰格式看起來不對，請確認是從 Google AI Studio 複製的 AIza… 字串。');
+      setError('金鑰格式看起來不對，請確認已完整複製 Google AI Studio 產生的金鑰（勿含空白或換行）。');
       return;
     }
     setBusy(true);
@@ -116,7 +116,7 @@ export function GeminiKeyForm({
         <KeyRound size={14} color={theme.colors.primary} style={{ marginTop: 2 }} />
         <View style={{ flex: 1 }}>
           <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12.5, lineHeight: 19 }}>
-            還沒有金鑰？到 Google AI Studio 點「Create API key」建立（個人使用有免費額度），複製 AIza… 開頭的字串貼到下方。
+            還沒有金鑰？到 Google AI Studio 點「Create API key」建立（個人使用有免費額度），把產生的金鑰完整複製貼到下方。
           </Text>
           <Pressable
             onPress={() => Linking.openURL(AI_STUDIO_KEY_URL).catch(() => {})}
@@ -143,7 +143,7 @@ export function GeminiKeyForm({
         <TextInput
           value={key}
           onChangeText={setKey}
-          placeholder="貼上 Gemini API 金鑰（AIza…）"
+          placeholder="貼上 Gemini API 金鑰"
           placeholderTextColor={theme.colors.onSurfaceVariant + '99'}
           autoCapitalize="none"
           autoCorrect={false}

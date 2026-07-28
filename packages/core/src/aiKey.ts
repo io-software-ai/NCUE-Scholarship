@@ -33,14 +33,18 @@ export function normalizeGeminiKey(raw: unknown): string {
 }
 
 /**
- * 粗略檢查是否像 Google AI Studio 金鑰（AIza 開頭）。
- * 僅用於即時提示；是否真的可用一律由伺服器實際呼叫 Gemini 驗證。
+ * 粗略檢查貼進來的字串像不像一把金鑰。
+ *
+ * 刻意不綁定前綴：Google 自 2026 年起，AI Studio 新建的是 `AQ.Ab…` 開頭的授權金鑰
+ * （舊的 `AIza…` standard key 預計 2026-09 停用），官方文件亦未承諾金鑰格式。
+ * 因此這裡只擋明顯的貼錯（空字串、含空白、貼到網址、長度過短），
+ * 金鑰是否真的可用一律由伺服器實際呼叫一次 Gemini 判定。
  */
 export function isLikelyGeminiKey(raw: unknown): boolean {
-    return /^AIza[0-9A-Za-z_-]{30,50}$/.test(normalizeGeminiKey(raw));
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{19,255}$/.test(normalizeGeminiKey(raw));
 }
 
-/** 遮罩顯示用提示（例：AIza••••7f3c）；金鑰本身不回傳給前端 */
+/** 遮罩顯示用提示（例：AQ.A••••CIIA）；金鑰本身不回傳給前端 */
 export function maskGeminiKey(raw: unknown): string {
     const key = normalizeGeminiKey(raw);
     if (key.length < 12) return '••••';

@@ -54,7 +54,7 @@ export async function PUT(request) {
             return NextResponse.json({ error: '請選擇金鑰儲存位置（本機或雲端）' }, { status: 400 });
         }
         if (!isLikelyGeminiKey(key)) {
-            return NextResponse.json({ error: '金鑰格式不正確：應為 Google AI Studio 提供的 AIza… 開頭字串' }, { status: 400 });
+            return NextResponse.json({ error: '金鑰格式不正確：請完整複製 Google AI Studio 產生的金鑰，勿含空白或多餘字元' }, { status: 400 });
         }
         if (storage === 'server' && !isSecretBoxReady()) {
             return NextResponse.json({

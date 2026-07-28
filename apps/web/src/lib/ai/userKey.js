@@ -129,7 +129,7 @@ export async function resolveGeminiKeyForUser({ userId, request = null, requestK
 export async function validateGeminiKey(rawKey) {
     const apiKey = normalizeGeminiKey(rawKey);
     if (!isLikelyGeminiKey(apiKey)) {
-        return { ok: false, error: '金鑰格式不正確：應為 Google AI Studio 提供的 AIza… 開頭字串。' };
+        return { ok: false, error: '金鑰格式不正確：請完整複製 Google AI Studio 產生的金鑰，勿含空白或多餘字元。' };
     }
 
     try {
