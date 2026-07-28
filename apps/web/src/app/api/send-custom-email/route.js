@@ -1,4 +1,5 @@
 import { siteConfig } from '@/lib/siteConfig';
+import { renderEmailShell, absolutizeHtmlUrls } from '@/lib/emailTemplate';
 import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { verifyUserAuth, checkRateLimit, validateRequestData, logSuccessAction } from '@/lib/apiMiddleware';

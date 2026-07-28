@@ -56,7 +56,7 @@ export default function Footer() {
                                 <div className="w-12 h-0.5 bg-footer-accent mt-2 mx-auto sm:mx-0"></div>
                             </div>
                             <p className="text-white/70 text-sm sm:text-base leading-relaxed">
-                                An AI-native scholarship platform. AI now assists the entire announcement lifecycle, streamlining the work for staff and students alike. A built-in assistant helps students refine their applications (Beta), and our LINE official account brings it to iOS.
+                                An AI-native scholarship platform. AI now assists the entire announcement lifecycle, streamlining the work for staff and students alike. A built-in assistant helps students refine their applications, and our LINE official account brings it to iOS.
                             </p>
                             <p className="text-white/55 text-xs sm:text-sm mt-3 sm:mt-4 leading-relaxed">
                                 Open source under PolyForm Noncommercial · Built with industry partners · Exhibited at COMPUTEX
