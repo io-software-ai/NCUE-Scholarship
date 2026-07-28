@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { verifyUserAuth, checkRateLimit, handleApiError } from '@/lib/apiMiddleware';
 import { mergeIntoBackground } from '@/lib/ai/memory';
+import { resolveGeminiKeyForUser } from '@/lib/ai/userKey';
 
 /**
  * 記憶庫增補（AI 助理提議 → 使用者按下同意）
@@ -23,7 +24,14 @@ export async function POST(request) {
             return NextResponse.json({ error: '請提供要加入記憶庫的項目' }, { status: 400 });
         }
 
-        const result = await mergeIntoBackground({ userId: authCheck.user.id, items });
+        // 整理記憶庫也會呼叫模型：校外使用者用自己的金鑰（拿不到就退回不經模型的保底合併）
+        const keyResult = await resolveGeminiKeyForUser({ userId: authCheck.user.id, request });
+        const result = await mergeIntoBackground({
+            userId: authCheck.user.id,
+            items,
+            apiKey: keyResult.ok ? keyResult.apiKey : null,
+            allowPlatformKey: !keyResult.status?.isExternal,
+        });
         if (!result.success) return NextResponse.json({ error: result.message }, { status: 400 });
 
         return NextResponse.json({

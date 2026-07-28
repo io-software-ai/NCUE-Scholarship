@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase/client';
 import { authService } from '@/lib/supabase/auth';
 import { useRouter } from 'next/navigation';
 import { authFetch } from '@/lib/authFetch';
-import { deriveStudentIdFromEmail } from '@/lib/studentId';
+import { resolveAccountStatus, needsLocalKeyOnThisDevice } from '@ncue/core';
+import { getLocalGeminiKey } from '@/lib/aiKeyClient';
 
 const AuthContext = createContext({});
 
@@ -36,12 +37,19 @@ export const AuthProvider = ({ children }) => {
     const refreshUserData = useCallback(async () => {
         const result = await authService.getCurrentUser();
         if (result.success && result.user) {
+            // 身分閘門（兩條路）：
+            // 1. 彰師大學生 — 學校信箱登入自動通過，其他信箱以校信箱驗證碼綁定學號
+            // 2. 校外使用者 — 自備 Gemini 金鑰（存本機或雲端）即完成註冊，AI 走自己的金鑰
+            const accountStatus = resolveAccountStatus({
+                profile: result.user.profile,
+                email: result.user.email,
+            });
             setUser({
                 ...result.user,
-                // 校園身分驗證閘門：學校信箱登入者自動通過（學號由信箱推導）；
-                // 其他信箱登入者須於 ProfileCompletionModal 完成校信箱驗證碼綁定後方可使用
-                needsProfileCompletion: !result.user.profile?.student_id
-                    && !deriveStudentIdFromEmail(result.user.email),
+                accountStatus,
+                // 帳號登記為「僅存本機」但這台裝置沒有金鑰 → 需要重新輸入（不擋瀏覽，只擋 AI）
+                needsLocalKey: needsLocalKeyOnThisDevice(accountStatus, getLocalGeminiKey()),
+                needsProfileCompletion: !accountStatus.verified,
                 hasAgreedToTerms: !!result.user.profile?.has_agreed_to_terms
             });
         } else {
@@ -242,6 +250,9 @@ export const AuthProvider = ({ children }) => {
         agreeToTerms,
         isAuthenticated: !!user,
         isAdmin: user?.role === 'admin' || user?.profile?.role === 'admin',
+        accountStatus: user?.accountStatus || null,
+        isExternalUser: !!user?.accountStatus?.isExternal,
+        needsLocalKey: !!user?.needsLocalKey,
         needsProfileCompletion: !!user?.needsProfileCompletion,
         hasAgreedToTerms: !!user?.hasAgreedToTerms,
         refreshUserData

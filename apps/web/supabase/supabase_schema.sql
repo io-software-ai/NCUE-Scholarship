@@ -178,8 +178,22 @@ CREATE TABLE public.profiles (
   last_login_at timestamp with time zone,
   last_login_ip text,
   ai_background text,
+  account_type text NOT NULL DEFAULT 'ncue'::text CHECK (account_type IN ('ncue', 'external')),
+  gemini_key_storage text CHECK (gemini_key_storage IS NULL OR gemini_key_storage IN ('local', 'server')),
+  gemini_key_hint text,
+  gemini_key_updated_at timestamp with time zone,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
+-- 使用者自備 AI 金鑰的加密密文（RLS 開啟且無 policy：僅 service role 可存取）
+CREATE TABLE public.user_ai_keys (
+  user_id uuid NOT NULL,
+  provider text NOT NULL DEFAULT 'gemini'::text,
+  cipher text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT user_ai_keys_pkey PRIMARY KEY (user_id),
+  CONSTRAINT user_ai_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE
 );
 CREATE TABLE public.school_email_codes (
   user_id uuid NOT NULL,

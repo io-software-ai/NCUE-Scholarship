@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import HtmlRenderer from '@/components/HtmlRenderer';
 import AnnouncementCard from './AnnouncementCard';
 import { authFetch } from '@/lib/authFetch';
+import { aiKeyHeaders } from '@/lib/aiKeyClient';
 import Link from 'next/link';
 import { Sparkles, Bot, ChevronDown, ChevronUp, BrainCircuit, Search, Loader2, Check, Wrench, BellRing, ThumbsUp, ThumbsDown, Database, X, Paperclip } from 'lucide-react';
 
@@ -123,7 +124,8 @@ const MemoryConsentCard = ({ items }) => {
         try {
             const res = await authFetch('/api/users/background/merge', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                // 記憶庫整理也會呼叫模型：本機儲存金鑰的校外使用者需附帶金鑰
+                headers: { 'Content-Type': 'application/json', ...aiKeyHeaders() },
                 body: JSON.stringify({ items }),
             });
             const data = await res.json().catch(() => ({}));

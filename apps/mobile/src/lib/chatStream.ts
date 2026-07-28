@@ -1,5 +1,6 @@
 // @ts-ignore - expo/fetch is provided by Expo environment
 import { fetch as expoFetch } from 'expo/fetch';
+import { aiKeyHeaders } from './geminiKey';
 
 export interface ChatHandlers {
   onText?: (text: string) => void;
@@ -22,13 +23,23 @@ export async function streamChat(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
+        // 校外使用者選擇「僅存本機」時，金鑰由此附帶（伺服器只在本次請求中使用）
+        ...(await aiKeyHeaders()),
       },
       body: JSON.stringify(body),
       signal,
     });
 
     if (!res.ok) {
-      throw new Error(`Chat API error: ${res.status}`);
+      // 伺服器的說明（例如金鑰失效、額度用盡）要能傳到畫面上，不要吞成狀態碼
+      const raw = await res.text().catch(() => '');
+      let detail = '';
+      try {
+        detail = JSON.parse(raw)?.error || '';
+      } catch {
+        /* 非 JSON 回應 */
+      }
+      throw new Error(detail || `Chat API error: ${res.status}`);
     }
 
     const reader = res.body!.getReader();

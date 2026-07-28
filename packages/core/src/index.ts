@@ -4,3 +4,4 @@ export * from './line';
 export * from './publicAnnouncements';
 export * from './retryFetch';
 export * from './studentId';
+export * from './aiKey';

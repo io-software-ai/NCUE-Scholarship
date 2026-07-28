@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
-import { deriveStudentIdFromEmail } from "@/lib/studentId";
+import { deriveStudentIdFromEmail, isStudentIdFormat } from "@/lib/studentId";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
     User as UserIcon, Edit3, Save, LogOut, Loader2, Fingerprint, Calendar, Clock,
-    FileText, GraduationCap, AlertCircle, Trash2, Bell, ShieldCheck
+    FileText, GraduationCap, AlertCircle, Trash2, Bell, ShieldCheck, Globe
 } from "lucide-react";
 import Toast from '@/components/ui/Toast';
+import AiKeyCard from '@/components/ai-key/AiKeyCard';
 import LineBindingCard from '@/components/LineBindingCard';
 import SubscriptionManager from '@/components/SubscriptionManager';
 import ConfirmByTypingModal from '@/components/ui/ConfirmByTypingModal';
@@ -26,7 +27,7 @@ const TABS = [
  */
 export default function ProfilePage() {
     const router = useRouter();
-    const { user, isAuthenticated, isAdmin, loading, signOut, updateProfile, deleteAccount } = useAuth();
+    const { user, isAuthenticated, isAdmin, loading, signOut, updateProfile, deleteAccount, isExternalUser } = useAuth();
 
     const [activeTab, setActiveTab] = useState('profile');
     const [formData, setFormData] = useState({ name: "", student_id: "" });
@@ -343,7 +344,13 @@ export default function ProfilePage() {
                                     <p className="text-[11px] text-ink-soft/70 mt-1">點擊姓名即可修改</p>
                                 </div>
                                 <div className="flex flex-col">
-                                    <dt className="text-sm font-medium text-ink-soft flex items-center gap-2"><GraduationCap size={15} className="text-primary" />學號</dt>
+                                    {/* 學生的識別碼即學號；教職員／別名信箱沒有學號，顯示為校內帳號 */}
+                                    <dt className="text-sm font-medium text-ink-soft flex items-center gap-2">
+                                        <GraduationCap size={15} className="text-primary" />
+                                        {isStudentIdFormat(derivedStudentId || user?.profile?.student_id || '') || !(derivedStudentId || user?.profile?.student_id)
+                                            ? '學號'
+                                            : '校內帳號'}
+                                    </dt>
                                     {(derivedStudentId || user?.profile?.student_id) ? (
                                         <>
                                             <dd className="text-base text-ink mt-1" translate="no">{derivedStudentId || user?.profile?.student_id}</dd>
@@ -351,7 +358,16 @@ export default function ProfilePage() {
                                         </>
                                     ) : (
                                         <div className="mt-1.5 space-y-2">
-                                            <p className="text-[12px] text-ink-soft leading-relaxed">您以校外信箱登入。如需綁定學號，請輸入學校信箱進行驗證：</p>
+                                            {isExternalUser && (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-page text-ink-soft border border-line">
+                                                    <Globe size={11} />校外使用者（無學號）
+                                                </span>
+                                            )}
+                                            <p className="text-[12px] text-ink-soft leading-relaxed">
+                                                {isExternalUser
+                                                    ? '校外帳號不需要學號。若你其實有彰師大學校信箱，也可在此驗證綁定：'
+                                                    : '您以校外信箱登入。如需綁定學號，請輸入學校信箱進行驗證：'}
+                                            </p>
                                             {!schoolCodeSent ? (
                                                 <div className="flex gap-2">
                                                     <input
@@ -428,6 +444,9 @@ export default function ProfilePage() {
                 {/* ===== 帳號安全 ===== */}
                 {activeTab === 'security' && (
                     <div className="space-y-5">
+                        {/* 自備 Gemini 金鑰（僅校外使用者顯示） */}
+                        <AiKeyCard showToast={showToast} />
+
                         {/* 帳號狀態 */}
                         <div className="bg-surface rounded-xl border border-line px-5 sm:px-6 py-5">
                             <h3 className="text-base font-bold text-ink mb-4 flex items-center gap-2.5">
@@ -489,8 +508,8 @@ export default function ProfilePage() {
                             </p>
                         </div>
 
-                        {/* 註銷 Danger Zone */}
-                        {!needsCompletion && !isAdmin && (
+                        {/* 註銷 Danger Zone（管理員亦可自助註銷；伺服器端會擋下平台唯一的管理員） */}
+                        {!needsCompletion && (
                             <div className="bg-surface rounded-xl border border-danger/30 px-5 sm:px-6 py-5">
                                 <h3 className="text-danger font-bold text-base flex items-center gap-2.5 mb-2">
                                     <span className="p-1.5 bg-danger/10 rounded-lg"><Trash2 className="h-4 w-4 text-danger" /></span>
@@ -498,6 +517,7 @@ export default function ProfilePage() {
                                 </h3>
                                 <p className="text-[13px] text-ink-soft mb-4 leading-relaxed">
                                     註銷後將刪除您的所有個人資料與對話紀錄，此操作不可逆，請謹慎執行。
+                                    {isAdmin && '若您是平台目前唯一的管理員，需先指派另一位管理員才能註銷。'}
                                 </p>
                                 <button
                                     onClick={() => setShowDeleteConfirm(true)}

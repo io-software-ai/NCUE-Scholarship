@@ -29,12 +29,14 @@ const EMBEDDING_MODEL = 'gemini-embedding-001';
 /**
  * 產生文字的 embedding 向量（供語意檢索）。失敗回傳 null（降級為關鍵字檢索）。
  * @param {'RETRIEVAL_DOCUMENT'|'RETRIEVAL_QUERY'} taskType
+ * @param {string|null} keyOverride 呼叫者的 Gemini 金鑰（校外使用者自備金鑰；
+ *        未提供時使用平台金鑰，供公告同步、回填等伺服器端流程）
  */
-export async function embedText(text, taskType = 'RETRIEVAL_DOCUMENT') {
+export async function embedText(text, taskType = 'RETRIEVAL_DOCUMENT', keyOverride = null) {
     const input = String(text || '').trim().slice(0, 8000);
     if (!input) return null;
     try {
-        const apiKey = await getSystemConfig('GEMINI_API_KEY');
+        const apiKey = keyOverride || await getSystemConfig('GEMINI_API_KEY');
         if (!apiKey) return null;
         const { GoogleGenAI } = await import('@google/genai');
         const ai = new GoogleGenAI({ apiKey });
@@ -296,7 +298,7 @@ export async function reconcileKnowledge({ force = false } = {}) {
  * 關鍵字檢索（供 AI 工具使用）：trigram/ILIKE 搜尋標題與內容。
  * keywords 陣列之間為 OR，回傳去重後的條目。
  */
-export async function searchKnowledge(keywords = [], { limit = 8 } = {}) {
+export async function searchKnowledge(keywords = [], { limit = 8, apiKey = null } = {}) {
     const terms = (Array.isArray(keywords) ? keywords : [keywords])
         .map(k => String(k || '').trim())
         .filter(Boolean)
@@ -325,7 +327,8 @@ export async function searchKnowledge(keywords = [], { limit = 8 } = {}) {
     // ── 路 2：語意檢索（向量；embedding 未回填或 RPC 不存在時自動略過）──
     const semanticRanks = new Map();
     try {
-        const queryVec = await embedText(terms.join('，'), 'RETRIEVAL_QUERY');
+        // 語意檢索的 embedding 也走呼叫者的金鑰（校外使用者自付其 AI 用量）
+        const queryVec = await embedText(terms.join('，'), 'RETRIEVAL_QUERY', apiKey);
         if (queryVec) {
             const { data, error } = await supabaseServer.rpc('match_ai_knowledge', {
                 query_embedding: queryVec,

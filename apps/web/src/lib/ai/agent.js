@@ -122,6 +122,8 @@ async function streamGenerate(ai, { contents, systemInstruction }) {
  * @param {Object}   options
  * @param {Array}    options.messages  訊息歷史（最後一則為使用者的最新提問）
  * @param {string}   options.channel   'web' | 'line'
+ * @param {string}   [options.apiKey]  指定使用的 Gemini 金鑰（校外使用者自備金鑰；
+ *                                     未提供時使用平台金鑰）
  * @param {Function} options.onText    (delta) => void  正式回覆增量
  * @param {Function} options.onThought (delta) => void  思考過程增量
  * @param {Function} options.onToolEvent ({name,label,status,summary}) => void  工具調用事件
@@ -130,8 +132,8 @@ async function streamGenerate(ai, { contents, systemInstruction }) {
 // 工具每輪呼叫上限（外部請求成本控制 + 防濫用）
 const TOOL_CALL_LIMITS = { web_search: 2, read_webpage: 3, subscribe_announcement: 2 };
 
-export async function runScholarshipAgent({ messages, channel = 'web', userId = null, userContext = '', onText = () => {}, onThought = () => {}, onToolEvent = () => {} }) {
-    const apiKey = await getSystemConfig('GEMINI_API_KEY');
+export async function runScholarshipAgent({ messages, channel = 'web', userId = null, userContext = '', apiKey: keyOverride = null, onText = () => {}, onThought = () => {}, onToolEvent = () => {} }) {
+    const apiKey = keyOverride || await getSystemConfig('GEMINI_API_KEY');
     if (!apiKey) throw new Error('缺少 GEMINI_API_KEY 設定');
 
     const ai = new GoogleGenAI({ apiKey });
@@ -191,7 +193,7 @@ export async function runScholarshipAgent({ messages, channel = 'web', userId = 
             const cap = TOOL_CALL_LIMITS[call.name];
             const result = (cap && toolCallCounts[call.name] > cap)
                 ? { error: `已達本輪「${call.name}」使用上限（${cap} 次），請以目前掌握的資訊回答。` }
-                : await executeTool(call.name, call.args || {}, { userId, channel });
+                : await executeTool(call.name, call.args || {}, { userId, channel, apiKey });
             const summary = Array.isArray(result) ? `${result.length} 筆結果`
                 : (typeof result === 'string' && result.startsWith('找不到')) ? '無結果' : '完成';
             onToolEvent({ name: call.name, label, status: 'done', summary });
@@ -206,13 +208,14 @@ export async function runScholarshipAgent({ messages, channel = 'web', userId = 
 /**
  * 非串流版本：回傳完整文字（供 LINE 自動回覆使用）。
  */
-export async function runScholarshipAgentText({ messages, channel = 'line', userId = null, userContext = '' }) {
+export async function runScholarshipAgentText({ messages, channel = 'line', userId = null, userContext = '', apiKey = null }) {
     let text = '';
     await runScholarshipAgent({
         messages,
         channel,
         userId,
         userContext,
+        apiKey,
         onText: delta => { text += delta; },
         onThought: () => {},
     });

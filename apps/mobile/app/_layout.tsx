@@ -15,7 +15,7 @@ import { AuthProvider, useAuth } from '../src/lib/auth-context';
 import { usePushRegistration } from '../src/lib/notifications';
 import { LocalStoreProvider } from '../src/lib/localStore';
 import { AlertProvider } from '../src/components/dialogs';
-import { SchoolVerificationGate } from '../src/components/SchoolVerificationGate';
+import { VerificationGate } from '../src/components/VerificationGate';
 
 // 前台顯示推播（SDK 54+ 行為欄位）
 Notifications.setNotificationHandler({
@@ -123,7 +123,7 @@ function ThemedNavigator() {
         <Stack.Screen name="faq" options={{ headerShown: true, headerTitle: '常見問題', headerBackTitle: '返回' }} />
       </Stack>
       {/* 新帳號未完成校園身分驗證前，遮罩擋住整個 App（同步網頁版） */}
-      <SchoolVerificationGate />
+      <VerificationGate />
     </>
   );
 }

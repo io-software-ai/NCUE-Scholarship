@@ -269,7 +269,14 @@ export default function AssistantScreen({ active = true }: { active?: boolean })
           else tools.push(e);
           return { ...m, tools };
         }),
-      onError: () => patch((m) => ({ ...m, content: m.content + '\n\n（連線發生問題，請稍後再試）', isStreaming: false })),
+      // 伺服器有具體原因（例如金鑰失效／額度用盡／本機找不到金鑰）就照實顯示
+      onError: (err: any) => {
+        const detail = String(err?.message || '');
+        const notice = detail && !/^Chat API error/.test(detail) && !/Network request failed/i.test(detail)
+          ? `\n\n（${detail}）`
+          : '\n\n（連線發生問題，請稍後再試）';
+        patch((m) => ({ ...m, content: m.content + notice, isStreaming: false }));
+      },
     }, ctrl.signal).finally(() => {
       patch((m) => ({ ...m, isStreaming: false }));
       setSending(false);

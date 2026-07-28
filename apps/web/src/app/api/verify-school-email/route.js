@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { supabaseServer } from '@/lib/supabase/server';
 import { verifyUserAuth, checkRateLimit, handleApiError, logSuccessAction } from '@/lib/apiMiddleware';
-import { deriveStudentIdFromEmail } from '@/lib/studentId';
+import { deriveStudentIdFromEmail, isStudentIdFormat } from '@/lib/studentId';
 import { renderEmailShell } from '@/lib/emailTemplate';
 import { siteConfig } from '@/lib/siteConfig';
 
@@ -33,11 +33,14 @@ export async function POST(request) {
                 return NextResponse.json({ error: '請輸入正確的學校信箱（帳號@mail.ncue.edu.tw 或 @gm.ncue.edu.tw）' }, { status: 400 });
             }
 
-            // 該學號不得已被其他帳號綁定
+            // 學生為學號、教職員／別名信箱為帳號前綴，文案依格式調整
+            const idLabel = isStudentIdFormat(studentId) ? '學號' : '校內帳號';
+
+            // 同一識別碼不得被兩個帳號綁定
             const { data: taken } = await supabaseServer
                 .from('profiles').select('id').eq('student_id', studentId).neq('id', userId).maybeSingle();
             if (taken) {
-                return NextResponse.json({ error: '此學號已被其他帳號綁定，若有疑問請聯繫平台維護團隊' }, { status: 409 });
+                return NextResponse.json({ error: `此${idLabel}已被其他帳號綁定，若有疑問請聯繫平台維護團隊` }, { status: 409 });
             }
 
             const verifyCode = String(Math.floor(100000 + Math.random() * 900000));
@@ -60,13 +63,13 @@ export async function POST(request) {
             await transporter.sendMail({
                 from: `"${process.env.SENDER_NAME || siteConfig.shortName}" <${process.env.SENDER_EMAIL}>`,
                 to: normalized,
-                subject: '【學號驗證】您的驗證碼',
+                subject: `【${idLabel}驗證】您的驗證碼`,
                 html: renderEmailShell({
-                    heading: '學號驗證',
+                    heading: `${idLabel}驗證`,
                     preheader: `驗證碼 ${verifyCode}（10 分鐘內有效）`,
                     bodyHtml: `
                         <p>您好：</p>
-                        <p>您正在「${siteConfig.name}」綁定學號 <strong translate="no">${studentId}</strong>，驗證碼為：</p>
+                        <p>您正在「${siteConfig.name}」綁定${idLabel} <strong translate="no">${studentId}</strong>，驗證碼為：</p>
                         <p style="font-size:32px;font-weight:700;letter-spacing:0.35em;color:#005A9C;text-align:center;margin:24px 0;" translate="no">${verifyCode}</p>
                         <p>請於 <strong>10 分鐘內</strong>回到平台「個資管理」頁面輸入此驗證碼。若這不是您本人的操作，請忽略此信。</p>
                     `,
@@ -89,13 +92,28 @@ export async function POST(request) {
             }
 
             const studentId = deriveStudentIdFromEmail(row.email);
+            const patch = { student_id: studentId };
+            // 原本以自備金鑰註冊的校外帳號，若尚未登記金鑰就完成校信箱驗證 → 轉為彰師大學生帳號
+            // （已登記金鑰者維持 external，繼續用自己的金鑰與額度）
+            try {
+                const { data: current } = await supabaseServer
+                    .from('profiles').select('account_type, gemini_key_storage').eq('id', userId).maybeSingle();
+                if (current && current.account_type === 'external' && !current.gemini_key_storage) {
+                    patch.account_type = 'ncue';
+                }
+            } catch { /* 欄位未建立（migration 未套用）時略過 */ }
+
             const { error: updateErr } = await supabaseServer
-                .from('profiles').update({ student_id: studentId }).eq('id', userId);
+                .from('profiles').update(patch).eq('id', userId);
             if (updateErr) throw updateErr;
             await supabaseServer.from('school_email_codes').delete().eq('user_id', userId);
 
             logSuccessAction('SCHOOL_EMAIL_VERIFIED', '/api/verify-school-email', { userId, studentId });
-            return NextResponse.json({ success: true, studentId, message: `學號 ${studentId} 綁定成功` });
+            return NextResponse.json({
+                success: true,
+                studentId,
+                message: `${isStudentIdFormat(studentId) ? '學號' : '校內帳號'} ${studentId} 綁定成功`,
+            });
         }
 
         return NextResponse.json({ error: '未知的 action' }, { status: 400 });

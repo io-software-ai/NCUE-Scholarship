@@ -138,7 +138,10 @@ export async function GET(request) {
         role: user.role || 'user',
         joinedAt: user.created_at,
         avatarUrl: user.avatar_url,
-        isGoogle: user.is_google
+        isGoogle: user.is_google,
+        // 校外使用者（自備 Gemini 金鑰、無學號）在後台清單標註出來
+        accountType: user.account_type === 'external' ? 'external' : 'ncue',
+        keyStorage: user.gemini_key_storage || null
       };
     });
 

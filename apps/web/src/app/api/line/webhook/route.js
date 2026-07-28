@@ -8,6 +8,7 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { getSystemConfig } from '@/lib/config';
 import { getLineConfig, verifyLineSignature, replyMessage, pushMessage, getLineProfile, downloadLineContent, sanitizeLineUserId } from '@/lib/line';
 import { runScholarshipAgentText } from '@/lib/ai/agent';
+import { resolveGeminiKeyForUser } from '@/lib/ai/userKey';
 import { siteConfig } from '@/lib/siteConfig';
 
 const WELCOME_MESSAGE = `感謝您加入「${siteConfig.name}」官方帳號！🎓
@@ -215,7 +216,27 @@ async function handleAiReply(lineUserId, replyToken, boundUserId = null) {
         } catch { /* 欄位未建立時靜默略過 */ }
     }
 
-    const answer = await runScholarshipAgentText({ messages: history, channel: 'line', userId: boundUserId, userContext });
+    // 綁定的校外使用者以自備金鑰呼叫 AI。LINE 這端沒有前端可附帶金鑰，
+    // 因此只有「存於雲端（加密）」的金鑰能在此代為使用；只存本機者需改設定。
+    let userApiKey = null;
+    if (boundUserId) {
+        const keyResult = await resolveGeminiKeyForUser({ userId: boundUserId });
+        if (!keyResult.ok) {
+            const notice = keyResult.code === 'KEY_REQUIRED' && keyResult.status?.keyStorage === 'local'
+                ? '您的 Gemini 金鑰目前只儲存在自己的裝置，LINE 這邊無法代為呼叫 AI。請到平台「個資管理 → 帳號安全」把金鑰改為「儲存到雲端帳號」，即可在 LINE 使用 AI 助理。'
+                : keyResult.error;
+            try {
+                await replyMessage(replyToken, notice);
+            } catch (e) {
+                await pushMessage(lineUserId, notice);
+            }
+            await saveLineMessage(lineUserId, 'ai', notice);
+            return;
+        }
+        userApiKey = keyResult.source === 'platform' ? null : keyResult.apiKey;
+    }
+
+    const answer = await runScholarshipAgentText({ messages: history, channel: 'line', userId: boundUserId, userContext, apiKey: userApiKey });
     if (!answer) return;
 
     // 每則 AI 自動回覆結尾附上免責聲明（提醒查證）

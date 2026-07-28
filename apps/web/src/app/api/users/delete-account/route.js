@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { deleteUserAccount } from '@/lib/accountDeletion';
 
 export async function POST(request) {
     const res = NextResponse.next();
@@ -51,34 +52,15 @@ export async function POST(request) {
     }
 
     try {
-        // 先解除／清理跨表關聯（多個外鍵缺 ON DELETE 規則，避免被 FK 擋下）
-        const cleanups = [
-            supabaseAdmin.from('line_users').update({ bound_user_id: null }).eq('bound_user_id', user.id),
-            supabaseAdmin.from('announcement_subscriptions').delete().eq('user_id', user.id),
-            supabaseAdmin.from('chat_history').delete().eq('user_id', user.id),
-            supabaseAdmin.from('login_history').delete().eq('user_id', user.id),
-            supabaseAdmin.from('system_settings').update({ updated_by: null }).eq('updated_by', user.id),
-        ];
-        for (const query of cleanups) {
-            const { error: cleanupErr } = await query;
-            if (cleanupErr) console.warn('[delete-account] cleanup failed:', cleanupErr.message);
-        }
-
-        // A. 刪除用戶在 public.profiles 中的資料 (這通常會觸發關聯資料的刪除)
-        const { error: profileError } = await supabaseAdmin
-            .from('profiles')
-            .delete()
-            .eq('id', user.id);
-
-        if (profileError) throw profileError;
-
-        // B. 刪除 auth.users 中的帳號
-        const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id);
-
-        if (deleteError) throw deleteError;
+        // 清理關聯資料 + 刪除 profiles / auth.users（與清除自備金鑰時共用同一實作）
+        await deleteUserAccount(user.id);
 
         return NextResponse.json({ success: true, message: '帳戶已成功註銷' });
     } catch (err) {
+        // 唯一管理員不得註銷（非系統錯誤，回 409 讓前端直接顯示原因）
+        if (err.code === 'LAST_ADMIN') {
+            return NextResponse.json({ error: err.message }, { status: 409 });
+        }
         console.error('Delete account error:', err);
         return NextResponse.json({ error: err.message || '註銷過程中發生錯誤' }, { status: 500 });
     }

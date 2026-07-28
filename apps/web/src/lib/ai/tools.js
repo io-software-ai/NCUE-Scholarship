@@ -178,8 +178,8 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 }
 
 const executors = {
-    async search_scholarships({ keywords }) {
-        const rows = await searchKnowledge(keywords, { limit: 8 });
+    async search_scholarships({ keywords }, context = {}) {
+        const rows = await searchKnowledge(keywords, { limit: 8, apiKey: context.apiKey || null });
         if (rows.length === 0) {
             return { found: 0, message: '知識庫中找不到符合的公告，可換其他關鍵字重試，或告知使用者目前無相關公告。' };
         }
@@ -403,7 +403,7 @@ const executors = {
         const cleaned = normalizeMemoryItems(items);
         if (cleaned.length === 0) return { success: false, message: '沒有可加入記憶庫的內容。' };
 
-        const result = await mergeIntoBackground({ userId: context.userId, items: cleaned });
+        const result = await mergeIntoBackground({ userId: context.userId, items: cleaned, apiKey: context.apiKey || null });
         return {
             success: result.success,
             saved_items: result.added || [],
@@ -414,7 +414,8 @@ const executors = {
 
 /**
  * 執行工具並回傳可 JSON 序列化的結果（永不 throw，錯誤以訊息回傳給模型）。
- * @param {Object} context - { userId, channel } 呼叫端使用者脈絡（訂閱等行動型工具需要）
+ * @param {Object} context - { userId, channel, apiKey } 呼叫端使用者脈絡
+ *        （訂閱等行動型工具需要 userId；apiKey 供語意檢索、記憶庫整理沿用同一把金鑰）
  */
 export async function executeTool(name, args = {}, context = {}) {
     const executor = executors[name];

@@ -62,8 +62,9 @@ function appendMerge(existing, items) {
 }
 
 /** 以模型將新資訊整理進既有背景資料（同一件事更新為一條，而非並列兩條） */
-async function organizeWithModel(existing, items) {
-    const apiKey = await getSystemConfig('GEMINI_API_KEY');
+async function organizeWithModel(existing, items, { apiKey: keyOverride = null, allowPlatformKey = true } = {}) {
+    // 校外使用者以自備金鑰整理；拿不到其金鑰時不得改用平台金鑰（退回保底合併）
+    const apiKey = keyOverride || (allowPlatformKey ? await getSystemConfig('GEMINI_API_KEY') : null);
     if (!apiKey) return null;
 
     const ai = new GoogleGenAI({ apiKey });
@@ -104,9 +105,12 @@ ${toBullets(items)}`;
  * @param {Object} options
  * @param {string} options.userId
  * @param {string[]} options.items 要加入的背景資料項目
+ * @param {string|null} [options.apiKey] 呼叫者的 Gemini 金鑰（校外使用者自備金鑰）
+ * @param {boolean} [options.allowPlatformKey] 是否允許在缺 apiKey 時改用平台金鑰
+ *        （校外使用者須為 false，避免由平台代付其 AI 用量）
  * @returns {Promise<{success:boolean, message:string, background?:string, added?:string[], skipped?:string[]}>}
  */
-export async function mergeIntoBackground({ userId, items }) {
+export async function mergeIntoBackground({ userId, items, apiKey = null, allowPlatformKey = true }) {
     if (!userId) return { success: false, message: '缺少使用者身分，無法寫入記憶庫。' };
 
     const cleaned = normalizeMemoryItems(items);
@@ -130,7 +134,7 @@ export async function mergeIntoBackground({ userId, items }) {
         if (fresh.length === 0) {
             return { success: true, background: existing, added: [], skipped: [], message: '這些資訊記憶庫中已經有了，無需重複加入。' };
         }
-        merged = (await organizeWithModel(existing, fresh)) || null;
+        merged = (await organizeWithModel(existing, fresh, { apiKey, allowPlatformKey })) || null;
         if (!merged) {
             const fallback = appendMerge(existing, fresh);
             merged = fallback.merged;

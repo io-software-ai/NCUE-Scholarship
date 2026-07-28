@@ -25,6 +25,7 @@ import { siteConfig } from '@ncue/core';
 import { useAuth } from '../lib/auth-context';
 import { useThemePreference, useAppTheme } from '../theme';
 import { SectionLabel } from '../components/ui';
+import { AiKeySection } from '../components/AiKeySection';
 import { IO_SOFTWARE_LOGO } from '../assets/ioSoftwareLogo';
 import { LINE_LOGO_PATH, LINE_GREEN, LINE_GREEN_DARK } from '../assets/lineLogo';
 import { useTabBarScroll, useTabBarClearance, usePager } from '../lib/tabBar';
@@ -152,6 +153,9 @@ export default function ProfileScreen() {
         <Card>
           <LineBindingSection session={session} />
         </Card>
+
+        {/* 自備 Gemini 金鑰（僅校外使用者顯示） */}
+        <AiKeySection />
 
         {/* 帳號 */}
         <SectionLabel style={{ marginTop: 20 }}>帳號與設定</SectionLabel>

@@ -3,12 +3,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { authFetch } from '@/lib/authFetch';
+import { aiKeyHeaders } from '@/lib/aiKeyClient';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { supabase } from '@/lib/supabase/client';
 import Toast from '@/components/ui/Toast';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
-import { Loader2, Sparkles, HandCoins, GraduationCap, ListChecks, Users } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, Sparkles, HandCoins, GraduationCap, ListChecks, Users, AlertCircle } from 'lucide-react';
 
 const SUGGESTIONS = [
     { icon: HandCoins, text: '我是低收入戶學生，可以申請哪些獎學金？' },
@@ -50,7 +52,7 @@ const WelcomeMessage = ({ userName, onSuggestion }) => (
 
 const ChatInterface = () => {
     const confirm = useConfirm();
-    const { user } = useAuth();
+    const { user, needsLocalKey } = useAuth();
     const [isHistoryLoading, setIsHistoryLoading] = useState(true);
     const [toast, setToast] = useState(null);
     const scrollAreaRef = useRef(null);
@@ -110,7 +112,9 @@ const ChatInterface = () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                    // 校外使用者選擇「僅存本機」時，金鑰由此附帶（伺服器只在本次請求中使用）
+                    ...aiKeyHeaders()
                 },
                 body: JSON.stringify({
                     messages: [...messages, userMessage],
@@ -272,6 +276,18 @@ const ChatInterface = () => {
 
     return (
         <div className="flex flex-col flex-1 bg-page/50 overflow-hidden font-sans relative select-none">
+            {/* 校外使用者把金鑰只存在別台裝置時，AI 會直接失敗 → 先明講並給修復入口 */}
+            {needsLocalKey && (
+                <div className="flex-shrink-0 mx-4 md:mx-6 mt-3 flex items-start gap-2.5 rounded-xl border border-warn/30 bg-warn/10 p-3 text-[13px] text-warn">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="font-medium leading-relaxed">
+                        這台裝置找不到你的 Gemini 金鑰，AI 助理暫時無法回應。請到
+                        <Link href="/profile" className="underline font-bold mx-1">個資管理 → 帳號安全</Link>
+                        重新輸入金鑰，或改為儲存到雲端帳號。
+                    </p>
+                </div>
+            )}
+
             {/* 對話顯示區域 - 限制在此內部捲動 */}
             <div 
                 ref={scrollAreaRef} 

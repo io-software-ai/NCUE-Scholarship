@@ -1,14 +1,17 @@
 /**
  * 全域登入狀態 — 單一 onAuthStateChange 訂閱，供所有畫面共用。
  *
- * 另負責「校園身分驗證閘門」（同步網頁版 AuthContext）：
- * 登入後以 /api/auth/profile-sync 建立／取得 profile；若無學號且登入信箱非校內網域，
- * needsVerification 為 true，由 SchoolVerificationGate 擋住整個 App 直到完成驗證。
+ * 另負責「身分驗證閘門」（同步網頁版 AuthContext）：
+ * 登入後以 /api/auth/profile-sync 建立／取得 profile，再由 resolveAccountStatus 判定：
+ * - 彰師大學生：有學號（校內信箱自動推導或以驗證碼綁定）→ 通過
+ * - 校外使用者：已登記自備 Gemini 金鑰（本機或雲端）→ 通過
+ * 兩者皆非時 needsVerification 為 true，由 VerificationGate 擋住整個 App。
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { deriveStudentIdFromEmail, siteConfig } from '@ncue/core';
+import { resolveAccountStatus, needsLocalKeyOnThisDevice, siteConfig, type AccountStatus } from '@ncue/core';
 import { supabase } from './supabase';
+import { getLocalGeminiKey } from './geminiKey';
 
 const API = process.env.EXPO_PUBLIC_API_BASE || siteConfig.url;
 
@@ -17,6 +20,9 @@ interface Profile {
   student_id?: string | null;
   username?: string | null;
   email?: string | null;
+  account_type?: string | null;
+  gemini_key_storage?: string | null;
+  gemini_key_hint?: string | null;
   [key: string]: any;
 }
 
@@ -24,8 +30,12 @@ interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   profile: Profile | null;
-  /** 需完成學校信箱驗證才能使用平台（僅在 profile 確實取得後才可能為 true） */
+  /** 帳號身分狀態（彰師大學生 / 校外自備金鑰） */
+  accountStatus: AccountStatus | null;
+  /** 需完成身分驗證才能使用平台（僅在 profile 確實取得後才可能為 true） */
   needsVerification: boolean;
+  /** 帳號登記為「僅存本機」但這台裝置沒有金鑰 → AI 需重新輸入金鑰（不擋瀏覽） */
+  needsLocalKey: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -34,7 +44,9 @@ const AuthContext = createContext<AuthContextValue>({
   session: null,
   loading: true,
   profile: null,
+  accountStatus: null,
   needsVerification: false,
+  needsLocalKey: false,
   refreshProfile: async () => {},
   signOut: async () => {},
 });
@@ -47,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   // 只有「確定拿到 profile」才判定要不要擋人；連線失敗時不誤擋已通過驗證的使用者
   const [profileChecked, setProfileChecked] = useState(false);
+  const [localKey, setLocalKey] = useState<string>('');
   const syncedFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -79,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok || !json?.profile) throw new Error(json?.error || 'profile-sync failed');
       setProfile(json.profile);
       setProfileChecked(true);
+      setLocalKey(await getLocalGeminiKey());
     } catch {
       // 網路／伺服器異常：維持未判定狀態，不擋使用者，下次啟動 App 再試
       setProfileChecked(false);
@@ -91,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       syncedFor.current = null;
       setProfile(null);
       setProfileChecked(false);
+      setLocalKey('');
       return;
     }
     if (syncedFor.current === uid) return; // 同一使用者只同步一次（token 刷新不重打）
@@ -102,17 +117,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     setProfile(null);
     setProfileChecked(false);
+    setLocalKey('');
     syncedFor.current = null;
   };
 
-  const needsVerification =
-    !!session &&
-    profileChecked &&
-    !profile?.student_id &&
-    !deriveStudentIdFromEmail(session.user.email ?? '');
+  const accountStatus = session
+    ? resolveAccountStatus({ profile, email: session.user.email ?? '' })
+    : null;
+
+  const needsVerification = !!session && profileChecked && !!accountStatus && !accountStatus.verified;
+  const needsLocalKey = !!accountStatus && needsLocalKeyOnThisDevice(accountStatus, localKey);
 
   return (
-    <AuthContext.Provider value={{ session, loading, profile, needsVerification, refreshProfile, signOut }}>
+    <AuthContext.Provider
+      value={{ session, loading, profile, accountStatus, needsVerification, needsLocalKey, refreshProfile, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );

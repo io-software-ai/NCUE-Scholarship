@@ -5,6 +5,7 @@ import { verifyUserAuth, checkRateLimit, handleApiError } from '@/lib/apiMiddlew
 import { supabaseServer as supabase } from '@/lib/supabase/server'
 import { getSystemConfig } from '@/lib/config'
 import { runScholarshipAgent } from '@/lib/ai/agent'
+import { resolveGeminiKeyForUser } from '@/lib/ai/userKey'
 import { buildReviewContext } from '@/lib/ai/reviewGuide'
 
 /** 提問帶有「填寫／送件／檢核文件」意圖時，自動帶入承辦端的查核重點 */
@@ -55,6 +56,14 @@ export async function POST(request) {
         const sessionId = providedSessionId || crypto.randomUUID();
         const userId = authCheck.user.id;
 
+        // 本次對話要用哪把金鑰：彰師大學生 → 平台金鑰；校外使用者 → 其自備金鑰
+        // （雲端儲存者由資料庫解密，本機儲存者由前端標頭 x-gemini-api-key 附帶）
+        const keyResult = await resolveGeminiKeyForUser({ userId, request });
+        if (!keyResult.ok) {
+            return NextResponse.json({ error: keyResult.error, code: keyResult.code }, { status: 403 });
+        }
+        const geminiApiKey = keyResult.apiKey;
+
         // 附件抽取前的原始輸入（存入歷史用）；前端顯示用的（附件：…）標記先去掉避免重複
         const originalUserText = userMessage.replace(/\n*（附件：[^）]*）\s*$/, '').trim();
         let attachmentLabel = '';
@@ -81,9 +90,8 @@ export async function POST(request) {
                 if (attachment.mimeType === 'text/plain') {
                     extracted = Buffer.from(attachment.data, 'base64').toString('utf8');
                 } else {
-                    const geminiKey = await getSystemConfig('GEMINI_API_KEY');
                     const { GoogleGenAI } = await import('@google/genai');
-                    const extractorAi = new GoogleGenAI({ apiKey: geminiKey });
+                    const extractorAi = new GoogleGenAI({ apiKey: geminiApiKey });
                     const extract = () => extractorAi.models.generateContent({
                         model: 'gemini-3.6-flash',
                         contents: [{ parts: [
@@ -208,6 +216,7 @@ export async function POST(request) {
                         messages: history,
                         channel: 'web',
                         userId,
+                        apiKey: geminiApiKey,
                         userContext: [
                             userBackground ? `## 使用者背景資料（本人自填，僅供推薦合適獎學金參考，不得複誦全文）\n${userBackground}` : '',
                             reviewContext,
@@ -238,8 +247,17 @@ export async function POST(request) {
                     }
                 } catch (err) {
                     console.error('[Chat] Agent error:', err);
+                    // 校外使用者以自備金鑰呼叫：金鑰失效／額度用盡時要說清楚，否則使用者無從排除
+                    const isUserKey = keyResult.source !== 'platform';
+                    const message = String(err?.message || '');
+                    let notice = '抱歉，AI 助理暫時無法回應，請稍後再試。';
+                    if (isUserKey && /API[_ ]?key not valid|API_KEY_INVALID|PERMISSION_DENIED/i.test(message)) {
+                        notice = '您的 Gemini 金鑰已失效或無權限，請到「個資管理 → 帳號安全」重新設定金鑰。';
+                    } else if (isUserKey && /RESOURCE_EXHAUSTED|quota|429/i.test(message)) {
+                        notice = '您的 Gemini 金鑰用量已達上限，請稍後再試，或到 Google AI Studio 確認額度。';
+                    }
                     try {
-                        controller.enqueue(encoder.encode(`0:${JSON.stringify('抱歉，AI 助理暫時無法回應，請稍後再試。')}\n`));
+                        controller.enqueue(encoder.encode(`0:${JSON.stringify(notice)}\n`));
                     } catch (e) { /* stream already closed */ }
                 } finally {
                     controller.close();

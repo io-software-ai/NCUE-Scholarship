@@ -6,7 +6,7 @@ import Toast from '@/components/ui/Toast';
 import { authFetch } from '@/lib/authFetch';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import ConfirmByTypingModal from '@/components/ui/ConfirmByTypingModal';
-import { Search, Users, Shield, UserCheck, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Loader2, Mail, ChevronDown, Trash2, ChevronsUpDown} from 'lucide-react';
+import { Search, Users, Shield, UserCheck, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Loader2, Mail, ChevronDown, Trash2, ChevronsUpDown, Globe} from 'lucide-react';
 import SendNotificationModal from './SendNotificationModal';
 
 const NotifyIcon = () => (
@@ -22,6 +22,19 @@ const GoogleIcon = () => (
         <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
         <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
     </svg>
+);
+
+/**
+ * 校外使用者標註：無學號、以自備 Gemini 金鑰註冊者。
+ * tooltip 一併說明金鑰儲存位置，承辦端排查 AI 問題時看得懂。
+ */
+const ExternalBadge = ({ keyStorage }) => (
+    <span
+        title={`校外使用者（自備 Gemini 金鑰${keyStorage === 'server' ? '，存於雲端' : keyStorage === 'local' ? '，僅存於其裝置' : ''}）`}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-page text-ink-soft border border-line font-sans"
+    >
+        <Globe size={11} aria-hidden="true" />校外
+    </span>
 );
 
 export default function UsersTab() {
@@ -358,7 +371,13 @@ export default function UsersTab() {
                             {loading ? (<tr><td colSpan="5" className="text-center p-12"><Loader2 className="h-6 w-6 animate-spin mx-auto" aria-label="載入中" /></td></tr>) : users.length === 0 ? (<tr><td colSpan="5" className="text-center p-12 text-ink-soft">找不到符合條件的使用者。</td></tr>) : (
                                 users.map((user) => (
                                     <tr key={user.id} className="group table-row-modern border-b border-line last:border-0">
-                                        <td className="p-4 px-6 font-mono">{user.studentId || '-'}</td>
+                                        <td className="p-4 px-6 font-mono">
+                                            {user.studentId
+                                                ? user.studentId
+                                                : user.accountType === 'external'
+                                                    ? <ExternalBadge keyStorage={user.keyStorage} />
+                                                    : '-'}
+                                        </td>
                                         <td className="p-4 px-6 font-medium text-ink">
                                             <div className="flex items-center">
                                                 {user.isGoogle && <span title="透過 Google 註冊" className="mr-1.5"><GoogleIcon /></span>}
@@ -396,7 +415,13 @@ export default function UsersTab() {
                                                 {user.isGoogle && <GoogleIcon />}
                                                 {user.name || '未命名'}
                                             </h3>
-                                            <p className="text-[11px] font-mono text-ink-soft/60 tracking-tighter uppercase">{user.studentId || 'NO ID'}</p>
+                                            {user.studentId ? (
+                                                <p className="text-[11px] font-mono text-ink-soft/60 tracking-tighter uppercase">{user.studentId}</p>
+                                            ) : user.accountType === 'external' ? (
+                                                <div className="mt-0.5"><ExternalBadge keyStorage={user.keyStorage} /></div>
+                                            ) : (
+                                                <p className="text-[11px] font-mono text-ink-soft/60 tracking-tighter uppercase">NO ID</p>
+                                            )}
                                         </div>
                                     </div>
                                     <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider ${user.role === 'admin' ? 'bg-primary-tint text-primary border border-primary/20' : 'bg-page text-ink-soft border border-line'}`}>
