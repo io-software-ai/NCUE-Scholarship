@@ -116,6 +116,17 @@ export async function resolveGeminiKeyForUser({ userId, request = null, requestK
         };
     }
 
+    // 平台金鑰只給已完成身分驗證者（彰師信箱 / 已綁定學號）。前端雖有身分閘門，
+    // 但 API 可被直接呼叫，必須在伺服器端再擋一次，否則任何 Gmail 帳號都能消耗平台額度。
+    if (!status.verified) {
+        return {
+            ok: false,
+            status,
+            code: 'NEEDS_SETUP',
+            error: '請先完成身分驗證（以學校信箱登入或綁定學號），或以校外身分自備 Gemini 金鑰後再使用 AI 功能。',
+        };
+    }
+
     const platformKey = normalizeGeminiKey(await getSystemConfig('GEMINI_API_KEY'));
     if (!platformKey) {
         return { ok: false, status, code: 'PLATFORM_KEY_MISSING', error: '平台尚未設定 GEMINI_API_KEY。' };

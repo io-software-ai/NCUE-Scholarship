@@ -17,7 +17,7 @@ function maskValue(key, value) {
   if (UNMASKED_KEYS.includes(key)) return value;
   
   if (value.length <= 8) return '******';
-  return `${value.substring(0, 3)}******${value.substring(value.length - 4)}`;
+  return `******${value.substring(value.length - 4)}`; // 只顯示末 4 碼
 }
 
 export async function GET(request) {

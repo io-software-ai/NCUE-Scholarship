@@ -6,6 +6,7 @@ import { X, Paperclip, Link as LinkIcon, Calendar, CalendarPlus, Users, Send as 
 import DownloadPDFButton from '@/components/admin/DownloadPDFButton';
 import { useAuth } from '@/hooks/useAuth';
 import { authFetch } from '@/lib/authFetch';
+import { sanitizeRichHtml } from '@/lib/richHtml';
 import { supabase } from '@/lib/supabase/client';
 import Toast from '@/components/ui/Toast';
 
@@ -230,12 +231,12 @@ export default function AnnouncementDetailModal({ isOpen, onClose, announcement,
 
     const targetAudienceHtml = useMemo(() => {
         if (!fullAnnouncement?.target_audience) return '未指定';
-        return wrapTables(fullAnnouncement.target_audience);
+        return wrapTables(sanitizeRichHtml(fullAnnouncement.target_audience));
     }, [fullAnnouncement]);
 
     const finalContent = useMemo(() => {
         if (!fullAnnouncement) return '無詳細內容';
-        return wrapTables(fullAnnouncement.summary || '無詳細內容');
+        return wrapTables(sanitizeRichHtml(fullAnnouncement.summary || '無詳細內容'));
     }, [fullAnnouncement]);
 
     const sortedAttachments = useMemo(() => {

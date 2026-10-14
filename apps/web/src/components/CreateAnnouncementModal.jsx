@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { sanitizeRichHtml } from '@/lib/richHtml';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import TinyMCE from './TinyMCE';
 import Button from '@/components/ui/Button';
@@ -225,7 +226,7 @@ const AiCompareOverlay = ({ original, optimized, onAdopt, onKeepOriginal, onBack
             <p className="text-[11px] font-bold text-ink-soft/60 uppercase tracking-wider mb-2">{label}</p>
             <div
                 className="prose prose-sm max-w-none text-ink [&_table]:w-full"
-                dangerouslySetInnerHTML={{ __html: html?.trim() ? html : '<p style="color:#9ca3af">（無內容）</p>' }}
+                dangerouslySetInnerHTML={{ __html: html?.trim() ? sanitizeRichHtml(html) : '<p style="color:#9ca3af">（無內容）</p>' }}
             />
         </div>
     );
@@ -338,7 +339,7 @@ export default function CreateAnnouncementModal({ isOpen, onClose, refreshAnnoun
 
             if (urls.length > 0) {
                 const results = await Promise.all(urls.map(async (url) => {
-                    const res = await fetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+                    const res = await authFetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
                     if (!res.ok) return { url, success: false };
                     const data = await res.json();
                     if (data.error || !data.scrapedText) return { url, success: false };

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
+import { getClientIp } from '@/lib/apiMiddleware';
 
 export async function POST(request) {
   try {
@@ -10,12 +11,9 @@ export async function POST(request) {
     }
 
     // 1. Get Client IP
-    let ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
-    
-    // Handle multiple IPs in x-forwarded-for (e.g. client, proxy1, proxy2)
-    if (ip.includes(',')) {
-      ip = ip.split(',')[0].trim();
-    }
+    // 用 nginx 寫入的 X-Real-IP（x-forwarded-for 第一段可被用戶端偽造來灌瀏覽數）
+    let ip = getClientIp(request);
+    if (ip === 'unknown') ip = '127.0.0.1';
     
     // Validate IP format simply (optional, but postgres inet type is strict)
     // If it's a local dev environment, it might be ::1, which is valid IPv6

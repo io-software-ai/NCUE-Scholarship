@@ -5,7 +5,20 @@ import DOMPurify from 'dompurify';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 
+// inline style 只保留排版用途：移除可做出全頁遮罩 / 偽造介面的定位與層級屬性
+const OVERLAY_CSS = /(^|;)\s*(position|z-index|inset|top|left|right|bottom|transform|pointer-events)\s*:[^;]*/gi;
+let overlayHookInstalled = false;
+function stripOverlayStyles() {
+    if (overlayHookInstalled || typeof window === 'undefined') return;
+    overlayHookInstalled = true;
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+        const style = node.getAttribute && node.getAttribute('style');
+        if (style) node.setAttribute('style', style.replace(OVERLAY_CSS, '$1'));
+    });
+}
+
 const HtmlRenderer = ({ content, isUser = false }) => {
+    stripOverlayStyles();
     // 狀態：確保只在客戶端渲染，以避免 Next.js 的 hydration 錯誤
     const [isClient, setIsClient] = useState(false);
 
@@ -29,10 +42,23 @@ const HtmlRenderer = ({ content, isUser = false }) => {
         .replace(/^\s*```(?:html)?\s*\n?/i, '')
         .replace(/\n?```\s*$/, '');
 
-    const cleanContent = DOMPurify.sanitize(processedContent, {
+    // 模型常把 HTML 縮排 4 格或在 <table>/<ul> 內插入空行：
+    // Markdown 會把縮排視為「程式碼區塊」（深色底、標籤原文外露），空行則會切斷 HTML 區塊。
+    // 含區塊級 HTML 時：去掉每行縮排，並移除容器標籤內的空行。
+    const hasBlockHtml = /<\/?(ul|ol|li|table|tr|td|th|p|div|h[1-6])\b/i.test(processedContent);
+    const normalizedContent = hasBlockHtml
+        ? processedContent
+            .replace(/^[ \t]+/gm, '')
+            .replace(/<(table|ul|ol)\b[\s\S]*?<\/\1>/gi, block => block.replace(/\n\s*\n+/g, '\n'))
+        : processedContent;
+
+    // AI 回覆可能夾帶外部網頁 / 附件內容（prompt injection），只放行排版用標籤：
+    // 不允許 iframe / style / 表單元件，inline style 也移除可覆蓋整頁的定位屬性（見 stripOverlayStyles）
+    const cleanContent = DOMPurify.sanitize(normalizedContent, {
         ADD_ATTR: ['style', 'class', 'target'],
-        ALLOWED_CSS_PROPERTIES: ['color'],
-        ADD_TAGS: ['iframe'], 
+        FORBID_TAGS: ['style', 'iframe', 'frame', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'link', 'meta', 'base', 'svg', 'math'],
+        FORBID_ATTR: ['formaction', 'action', 'srcset'],
+        ALLOW_DATA_ATTR: false,
     });
 
     return (
@@ -47,7 +73,8 @@ const HtmlRenderer = ({ content, isUser = false }) => {
             prose-th:bg-page prose-th:px-3 prose-th:py-2 prose-th:text-ink
             prose-td:px-3 prose-td:py-2 prose-td:border-t prose-td:border-line
             prose-pre:whitespace-pre-wrap prose-pre:break-words prose-pre:text-[12.5px]
-            prose-code:break-words
+            prose-pre:bg-page prose-pre:text-ink prose-pre:border prose-pre:border-line prose-pre:rounded-lg prose-pre:shadow-none
+            prose-code:break-words prose-code:text-ink prose-code:font-normal
             prose-hr:hidden
         `}>
             <ReactMarkdown 

@@ -39,8 +39,10 @@ export async function GET(request) {
     try {
         let viewQuery = supabase.from('admin_profiles_view').select('*', { count: 'exact' });
 
-        if (search) {
-            viewQuery = viewQuery.or(`username.ilike.%${search}%,student_id.ilike.%${search}%,email.ilike.%${search}%`);
+        // PostgREST 篩選字串注入防護：移除 , ( ) 等語法字元
+        const safeSearch = String(search || '').replace(/[%_,()*\\"]/g, ' ').trim();
+        if (safeSearch) {
+            viewQuery = viewQuery.or(`username.ilike.%${safeSearch}%,student_id.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`);
         }
 
         if (role) {
@@ -72,9 +74,10 @@ export async function GET(request) {
     if (!usingView) {
         let query = supabase.from('profiles').select('*', { count: 'exact' });
 
-        if (search) {
+        const safeSearch = String(search || '').replace(/[%_,()*\\"]/g, ' ').trim();
+        if (safeSearch) {
             // Fallback 模式不支援 Email 搜尋
-            query = query.or(`username.ilike.%${search}%,student_id.ilike.%${search}%`);
+            query = query.or(`username.ilike.%${safeSearch}%,student_id.ilike.%${safeSearch}%`);
         }
 
         if (role) {

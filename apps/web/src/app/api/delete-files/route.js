@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
-import { verifyUserAuth } from '@/lib/apiMiddleware'; // 引入您的身份驗證中介軟體
+import { verifyUserAuth } from '@/lib/apiMiddleware';
+
+const ATTACHMENTS_DIR = path.resolve(process.cwd(), 'public', 'storage', 'attachments');
 
 export async function POST(request) {
   // 1. 安全性檢查：確保只有已登入的管理員可以呼叫此 API
@@ -30,7 +32,14 @@ export async function POST(request) {
     for (const relativePath of filePaths) {
       // 3. 建構檔案在伺服器上的絕對路徑
       // process.cwd() 會取得專案的根目錄
-      const absolutePath = path.join(process.cwd(), 'public', relativePath);
+      // 只允許刪除附件目錄內的檔案（防 ../ 路徑穿越刪除 .env.local 等任意檔案）
+      const absolutePath = typeof relativePath === 'string'
+        ? path.resolve(process.cwd(), 'public', relativePath.replace(/^\/+/, ''))
+        : '';
+      if (!absolutePath.startsWith(ATTACHMENTS_DIR + path.sep)) {
+        deletionResults.failed.push({ path: String(relativePath), error: '不允許的路徑' });
+        continue;
+      }
 
       try {
         // 4. 使用 Node.js 的 fs 模組來檢查檔案是否存在並刪除
@@ -41,7 +50,7 @@ export async function POST(request) {
         // 如果檔案不存在 (ENOENT)，我們也視為成功，因為目標已經達成
         if (err.code !== 'ENOENT') {
           console.error(`刪除檔案失敗: ${absolutePath}`, err);
-          deletionResults.failed.push({ path: relativePath, error: err.message });
+          deletionResults.failed.push({ path: relativePath, error: '刪除失敗' });
         } else {
             console.log(`檔案不存在，無需刪除: ${absolutePath}`);
             deletionResults.success.push(relativePath);

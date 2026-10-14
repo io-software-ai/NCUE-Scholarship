@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import { join } from 'path';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { existsSync } from 'fs';
 import { verifyUserAuth, checkRateLimit, handleApiError, logSuccessAction } from '@/lib/apiMiddleware';
 
@@ -13,7 +13,7 @@ export async function POST(request) {
 
         const authCheck = await verifyUserAuth(request, {
             requireAuth: true,
-            requireAdmin: false,
+            requireAdmin: true, // 只有後台公告編輯會上傳附件
             endpoint: '/api/upload-files'
         });
         if (!authCheck.success) return authCheck.error;
@@ -63,9 +63,11 @@ export async function POST(request) {
 
             try {
                 // 檔案驗證
-                const isMimeTypeAllowed = Object.keys(allowedFileTypes).includes(file.type);
-                const isExtensionAllowed = Object.values(allowedFileTypes).flat().includes(fileExtension);
-                if (!isMimeTypeAllowed && !isExtensionAllowed) {
+                // 副檔名決定檔案被伺服時的 Content-Type，因此「副檔名」必須在白名單內（不可只看前端宣告的 MIME，
+                // 否則 x.html + Content-Type: application/pdf 會被存成可執行的 HTML → 儲存型 XSS）。
+                // 存檔的 MIME 一律由副檔名推導，不採用前端提供的值。
+                const serverMime = Object.keys(allowedFileTypes).find(m => allowedFileTypes[m].includes(fileExtension));
+                if (!/^[a-z0-9]{1,5}$/.test(fileExtension) || !serverMime) {
                     throw new Error(`不支援的檔案類型 '.${fileExtension}'`);
                 }
                 if (file.size > maxFileSize) throw new Error('檔案大小超過 15MB 限制');
@@ -78,7 +80,7 @@ export async function POST(request) {
                 const timestamp = Date.now();
 
                 // 在檔名中加入檔案在陣列 index 和一個隨機數
-                const randomSuffix = Math.random().toString(36).substring(2, 8);
+                const randomSuffix = randomBytes(4).toString('hex');
                 const safeFileName = `${timestamp}-${index}-${hash.substring(0, 8)}-${randomSuffix}.${fileExtension}`;
 
                 const filePath = join(uploadDir, safeFileName);
@@ -97,12 +99,12 @@ export async function POST(request) {
                     originalName,
                     path: publicPath,
                     size: file.size,
-                    mimeType: file.type,
+                    mimeType: serverMime,
                 });
 
             } catch (e) {
                 console.error(`處理檔案 ${originalName} 時發生錯誤:`, e);
-                uploadErrors.push({ fileName: originalName, error: e.message || '伺服器處理失敗' });
+                uploadErrors.push({ fileName: originalName, error: e.message?.startsWith('不支援') || e.message?.startsWith('檔案') ? e.message : '伺服器處理失敗' });
             }
         }
 

@@ -43,8 +43,12 @@ export async function POST(request) {
             if (file.size > MAX_SIZE) {
                 return NextResponse.json({ error: '圖片需小於 5MB' }, { status: 400 });
             }
+            // 檔名與類型由伺服器決定（不採用用戶端提供的檔名 / MIME，避免夾帶 .html 等可執行附件）
+            const IMAGE_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+            const ext = IMAGE_EXT[file.type];
+            if (!ext) return NextResponse.json({ error: '僅接受 PNG / JPG / WebP / GIF 圖片' }, { status: 400 });
             attachments.push({
-                filename: file.name || `image-${attachments.length + 1}.png`,
+                filename: `image-${attachments.length + 1}.${ext}`,
                 content: Buffer.from(await file.arrayBuffer()),
                 contentType: file.type,
             });

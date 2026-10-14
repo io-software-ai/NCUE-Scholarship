@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import nodemailer from 'nodemailer';
 import { supabaseServer } from '@/lib/supabase/server';
 import { siteConfig } from '@/lib/siteConfig';
@@ -18,8 +19,10 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request) {
     try {
-        const auth = request.headers.get('authorization') || '';
-        if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
+        const auth = Buffer.from(request.headers.get('authorization') || '');
+        const expected = Buffer.from(`Bearer ${process.env.CRON_SECRET || ''}`);
+        // 固定時間比對，避免以回應時間逐字元猜出密鑰
+        if (!process.env.CRON_SECRET || auth.length !== expected.length || !timingSafeEqual(auth, expected)) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -129,6 +132,6 @@ export async function GET(request) {
         return NextResponse.json({ success: true, sent, pushed, failed: failed.length });
     } catch (error) {
         console.error('[deadline-notify] Error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

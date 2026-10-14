@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, Suspense } from "react";
+import { safeRedirectPath } from '@/lib/safeRedirect';
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -72,7 +73,7 @@ function LoginContent() {
 
     useEffect(() => {
         if (isAuthenticated) {
-            router.push(searchParams.get('redirect') || '/profile');
+            router.push(safeRedirectPath(searchParams.get('redirect')));
         }
     }, [isAuthenticated, router, searchParams]);
 

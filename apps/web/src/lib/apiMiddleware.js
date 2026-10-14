@@ -7,18 +7,16 @@ import { rateLimit, logSecurityEvent, validateUserInput, sanitizeUserData } from
  * 提供統一的身份驗證、授權和安全檢查
  */
 
+import { createHmac, timingSafeEqual } from 'crypto';
+
 /**
  * 取出可信的用戶端 IP。
  *
- * nginx 用 $proxy_add_x_forwarded_for「附加」在既有標頭後面，所以 x-forwarded-for
- * 的第一段是用戶端自己送來的、可偽造；只有最後一段（nginx 填的 $remote_addr）可信。
- * 而 nginx 設定了 real_ip_header CF-Connecting-IP，$remote_addr 已是 Cloudflare
- * 回報的真實用戶端位址，所以 x-real-id / 最後一段都指向同一個值。
+ * nginx 設定 real_ip_header CF-Connecting-IP + set_real_ip_from（僅信任 Cloudflare 網段），
+ * 並以 proxy_set_header X-Real-IP $remote_addr 傳給 Next —— 這是唯一由 nginx 覆寫、用戶端無法偽造的值。
+ * cf-connecting-ip 與 x-forwarded-for 第一段都是原樣轉送的用戶端標頭（可直連 origin 時能偽造），不可採信。
  */
-function getClientIp(request) {
-	const cf = request.headers.get('cf-connecting-ip');
-	if (cf) return cf.trim();
-
+export function getClientIp(request) {
 	const real = request.headers.get('x-real-ip');
 	if (real) return real.trim();
 
@@ -33,18 +31,26 @@ function getClientIp(request) {
 /**
  * 從 Bearer token 取出 sub（用戶 ID），僅用於速率限制分桶。
  *
- * 這裡刻意不驗簽：驗簽要打 Supabase Auth，成本高，而且真正的身份驗證由
- * verifyUserAuth 負責。偽造的 token 只會被分到另一個桶，仍受 IP 上限保護。
+ * 以 JWT_SECRET 在本機驗 HS256 簽章與到期時間（不需呼叫 Supabase Auth）；
+ * 驗不過就視為未登入、改用 IP 計次 —— 避免偽造 token 換桶繞過額度，或冒用他人 sub 把對方鎖住。
  */
 function getTokenSubject(request) {
 	const authHeader = request.headers.get('authorization');
 	if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+	const secret = process.env.JWT_SECRET;
+	if (!secret) return null;
 
 	try {
-		const payload = authHeader.slice(7).split('.')[1];
-		if (!payload) return null;
-		const sub = JSON.parse(Buffer.from(payload, 'base64url').toString()).sub;
-		return typeof sub === 'string' && sub ? sub : null;
+		const [header, payload, signature] = authHeader.slice(7).split('.');
+		if (!header || !payload || !signature) return null;
+		const alg = JSON.parse(Buffer.from(header, 'base64url').toString()).alg;
+		if (alg !== 'HS256') return null;
+		const expected = createHmac('sha256', secret).update(`${header}.${payload}`).digest();
+		const given = Buffer.from(signature, 'base64url');
+		if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
+		const claims = JSON.parse(Buffer.from(payload, 'base64url').toString());
+		if (typeof claims.exp === 'number' && claims.exp * 1000 < Date.now()) return null;
+		return typeof claims.sub === 'string' && claims.sub ? claims.sub : null;
 	} catch {
 		return null;
 	}

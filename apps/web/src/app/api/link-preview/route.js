@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/apiMiddleware';
+import { safeFetch, isAllowedUrlSyntax } from '@/lib/safeFetch';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,18 +8,6 @@ export const dynamic = 'force-dynamic';
 const cache = new Map();
 const TTL = 24 * 60 * 60 * 1000;
 const MAX_BYTES = 256 * 1024;
-
-/** SSRF 防護：僅允許公開網段的 http(s) */
-function isSafeUrl(raw) {
-    try {
-        const u = new URL(raw);
-        if (!['http:', 'https:'].includes(u.protocol)) return false;
-        const h = u.hostname;
-        if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) return false;
-        if (/^(127|10|0)\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.|^169\.254\.|^\[?::1/.test(h)) return false;
-        return true;
-    } catch { return false; }
-}
 
 const decodeEntities = (str = '') => str
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
@@ -45,7 +34,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const url = searchParams.get('url');
-    if (!url || !isSafeUrl(url)) {
+    if (!url || !isAllowedUrlSyntax(url)) {
         return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
     }
 
@@ -55,23 +44,21 @@ export async function GET(request) {
     }
 
     try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch(url, {
-            signal: controller.signal,
-            redirect: 'follow',
+        // safeFetch：DNS 解析後檢查 IP、逐跳檢查重新導向，避免被當成探測內網的跳板
+        const res = await safeFetch(url, {
+            timeoutMs: 5000,
+            maxBytes: MAX_BYTES,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (compatible; NCUE-Scholarship-LinkPreview/1.0)',
                 'Accept': 'text/html,application/xhtml+xml',
                 'Accept-Language': 'zh-TW,zh;q=0.9',
             },
         });
-        clearTimeout(timer);
 
-        const contentType = res.headers.get('content-type') || '';
+        const contentType = res.contentType;
         if (!res.ok || !contentType.includes('html')) throw new Error('not html');
 
-        const buffer = Buffer.from(await res.arrayBuffer()).subarray(0, MAX_BYTES);
+        const buffer = res.body;
 
         // 字元編碼：content-type / meta charset，預設 utf-8（台灣老站常見 big5）
         let charset = (contentType.match(/charset=([\w-]+)/i)?.[1] || '').toLowerCase();

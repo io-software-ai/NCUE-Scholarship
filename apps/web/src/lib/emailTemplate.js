@@ -9,6 +9,9 @@
 
 import { siteConfig } from './siteConfig';
 
+const escapeHtml = (str = '') =>
+    String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 export const EMAIL_COLORS = {
     primary: '#005A9C',
     primaryDark: '#004A80',
@@ -67,6 +70,9 @@ export const EMAIL_LOGO_URL = `${siteConfig.url}/logo-email.png`;
  * @param {string} [opts.preheader] 收件匣預覽文字（隱藏於信件中）
  */
 export function renderEmailShell({ heading = '', bodyHtml = '', preheader = '' }) {
+    // heading / preheader 一律是純文字（可能含使用者輸入，如問題回報描述）→ 在此統一跳脫
+    heading = escapeHtml(String(heading || ''));
+    preheader = escapeHtml(String(preheader || ''));
     const year = new Date().getFullYear();
     const C = EMAIL_COLORS;
 
@@ -148,7 +154,7 @@ export function renderAdminPromotionEmail({ username = '' } = {}) {
         heading: '您已被授予管理員權限',
         preheader: `${siteConfig.name} 管理員權限授予通知`,
         bodyHtml: `
-            <p>${username ? `${username} ` : ''}您好：</p>
+            <p>${username ? `${escapeHtml(username)} ` : ''}您好：</p>
             <p>您在「<strong>${siteConfig.name}</strong>」的帳號已被授予<strong>管理員權限</strong>，現在可以使用管理後台的完整功能：</p>
             <ul>
                 <li>公告的建立、編輯與發布（含 AI 智慧排版）</li>

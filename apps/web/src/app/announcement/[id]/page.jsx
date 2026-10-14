@@ -2,6 +2,10 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { supabaseServer } from '@/lib/supabase/server';
 import { siteConfig } from '@/lib/siteConfig';
+import { sanitizeRichHtmlServer } from '@/lib/richHtml.server';
+
+// JSON-LD 內若有 </script> 會跳出 script 標籤 → 跳脫 < > &
+const safeJsonLd = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 import {
     CATEGORY_NAMES, getCategoryBadgeClass, getDeadlineInfo,
     getPublicAttachmentUrl, getFileKind, formatFileSize,
@@ -123,8 +127,8 @@ export default async function AnnouncementPage({ params }) {
 
     return (
         <div className="w-full bg-page min-h-full">
-            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleLd) }} />
-            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(articleLd) }} />
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbLd) }} />
             <style>{`
                 .rich-text-content { overflow-x: hidden; word-break: break-word; }
                 .rich-text-content p { margin-bottom: 1rem; }
@@ -179,7 +183,7 @@ export default async function AnnouncementPage({ params }) {
                     <section className="mb-7">
                         <h2 className="text-[13px] font-semibold tracking-widest text-ink-soft mb-2.5 flex items-center gap-1.5"><Users size={14} aria-hidden="true" />適用對象</h2>
                         <div className="text-ink rich-text-content text-sm leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: wrapTables(announcement.target_audience) }} />
+                            dangerouslySetInnerHTML={{ __html: wrapTables(sanitizeRichHtmlServer(announcement.target_audience)) }} />
                     </section>
                 )}
 
@@ -187,7 +191,7 @@ export default async function AnnouncementPage({ params }) {
                 <section className="mb-7">
                     <h2 className="text-[13px] font-semibold tracking-widest text-ink-soft mb-2.5 flex items-center gap-1.5"><FileText size={14} aria-hidden="true" />詳細內容</h2>
                     <div className="rich-text-content text-ink text-[15px] leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: wrapTables(announcement.summary || '無詳細內容') }} />
+                        dangerouslySetInnerHTML={{ __html: wrapTables(sanitizeRichHtmlServer(announcement.summary || '無詳細內容')) }} />
                 </section>
 
                 {/* 附件 */}

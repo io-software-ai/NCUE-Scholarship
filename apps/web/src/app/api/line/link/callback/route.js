@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
-import { verifyLinkState, bindLineAccount } from '@/lib/lineLinkState';
+import { verifyLinkState, bindLineAccount, LINK_NONCE_COOKIE } from '@/lib/lineLinkState';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +18,7 @@ export async function GET(request) {
         const state = url.searchParams.get('state');
         if (!code || !state) return fail('missing_params');
 
-        const userId = verifyLinkState(state);
+        const userId = verifyLinkState(state, request.cookies.get(LINK_NONCE_COOKIE)?.value);
         if (!userId) return fail('invalid_state');
 
         // 交換 access token
@@ -52,7 +52,9 @@ export async function GET(request) {
         });
 
         console.log(`[LINE Link] User ${userId} bound via OAuth to ${profile.userId.slice(0, 8)}...`);
-        return NextResponse.redirect(`${origin}/profile?line=linked`);
+        const done = NextResponse.redirect(`${origin}/profile?line=linked`);
+        done.cookies.delete({ name: LINK_NONCE_COOKIE, path: '/api/line/link/callback' });
+        return done;
     } catch (error) {
         console.error('[LINE Link] Callback error:', error);
         return fail('unexpected');

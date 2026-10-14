@@ -62,6 +62,6 @@ export async function POST(request) {
             return NextResponse.json({ error: err.message }, { status: 409 });
         }
         console.error('Delete account error:', err);
-        return NextResponse.json({ error: err.message || '註銷過程中發生錯誤' }, { status: 500 });
+        return NextResponse.json({ error: '註銷過程中發生錯誤，請稍後再試' }, { status: 500 });
     }
 }

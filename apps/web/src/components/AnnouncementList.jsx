@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
+import { sanitizeRichHtml } from '@/lib/richHtml';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ChevronsUpDown, ArrowUp, ArrowDown, Award, Loader2, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, ChevronDown } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -92,8 +93,9 @@ function AnnouncementListContent({ filterRequest }) {
             .select('id, title, category, application_start_date, application_end_date, target_audience, application_limitations, submission_method, is_active', { count: 'exact' })
             .eq('is_active', true);
 
-        if (search) {
-            query = query.or(`title.ilike.%${search}%,summary.ilike.%${search}%,target_audience.ilike.%${search}%`);
+        const safeSearch = String(search || '').replace(/[%_,()*\\"]/g, ' ').trim();
+        if (safeSearch) {
+            query = query.or(`title.ilike.%${safeSearch}%,summary.ilike.%${safeSearch}%,target_audience.ilike.%${safeSearch}%`);
         }
 
         const today = localDateString();
@@ -326,7 +328,7 @@ function AnnouncementListContent({ filterRequest }) {
                                                 <p className={`${isRead ? 'font-normal' : 'font-semibold text-ink'}`}>{item.title}</p>
                                             </div>
                                         </td>
-                                        <td className="p-4 px-6 text-sm align-top"><div className="line-clamp-3" dangerouslySetInnerHTML={{ __html: item.target_audience }} /></td>
+                                        <td className="p-4 px-6 text-sm align-top"><div className="line-clamp-3" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(item.target_audience) }} /></td>
                                         <td className="p-4 px-6 text-sm font-bold align-top">
                                             <ApplicationLimitations limitations={item.application_limitations} />
                                         </td>
@@ -368,7 +370,7 @@ function AnnouncementListContent({ filterRequest }) {
                                 <AnimatePresence>{isExpanded && (
                                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: "easeOut" }} className="overflow-hidden">
                                         <div className="pt-2 pb-4 px-4 border-t border-line space-y-3 text-sm">
-                                            <div><div className="font-semibold text-ink-soft mb-1">適用對象</div><div className="line-clamp-3" dangerouslySetInnerHTML={{ __html: item.target_audience }} /></div>
+                                            <div><div className="font-semibold text-ink-soft mb-1">適用對象</div><div className="line-clamp-3" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(item.target_audience) }} /></div>
                                             <div>
                                                 <div className="font-semibold text-ink-soft mb-1">兼領限制</div>
                                                 <div className="font-medium"><ApplicationLimitations limitations={item.application_limitations} /></div>

@@ -1,5 +1,6 @@
 import { supabaseServer as supabase } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { checkRateLimit } from '@/lib/apiMiddleware';
 
 /**
  * 儲存裝置 FCM token。
@@ -12,8 +13,15 @@ import { NextResponse } from 'next/server';
  */
 export async function POST(request) {
     try {
-        const { token, deviceType } = await request.json();
-        if (!token) return NextResponse.json({ error: 'Token is required' }, { status: 400 });
+        const rateLimitCheck = checkRateLimit(request, 'save-fcm-token', 10, 60000);
+        if (!rateLimitCheck.success) return rateLimitCheck.error;
+
+        const { token, deviceType: rawDeviceType } = await request.json();
+        // FCM / Expo token 格式檢查，避免任意字串灌爆資料表與廣播名單
+        if (typeof token !== 'string' || token.length < 20 || token.length > 4096 || !/^[\w:\-\[\]\.]+$/.test(token)) {
+            return NextResponse.json({ error: 'Invalid token' }, { status: 400 });
+        }
+        const deviceType = ['web', 'ios', 'android'].includes(rawDeviceType) ? rawDeviceType : 'web';
 
         // supabaseServer 是 service-role client，沒有使用者 session；
         // 必須拿 Bearer token 去換使用者，否則 user_id 永遠是 null。
@@ -36,7 +44,7 @@ export async function POST(request) {
             if (user && existing.user_id !== user.id) {
                 await supabase
                     .from('fcm_tokens')
-                    .update({ user_id: user.id, device_type: deviceType || 'web' })
+                    .update({ user_id: user.id, device_type: deviceType })
                     .eq('id', existing.id);
             }
             return NextResponse.json({ message: 'Token already exists', linked: !!user });
@@ -46,7 +54,7 @@ export async function POST(request) {
         const { error } = await supabase.from('fcm_tokens').insert({
             fcm_token: token,
             user_id: user?.id || null,
-            device_type: deviceType || 'web'
+            device_type: deviceType
         });
 
         if (error) throw error;
@@ -54,6 +62,6 @@ export async function POST(request) {
         return NextResponse.json({ message: 'Token saved successfully', linked: !!user });
     } catch (error) {
         console.error('Error saving token:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

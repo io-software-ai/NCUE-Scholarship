@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyUserAuth, handleApiError } from '@/lib/apiMiddleware';
-import { signLinkState } from '@/lib/lineLinkState';
+import { signLinkState, createLinkNonce, LINK_NONCE_COOKIE } from '@/lib/lineLinkState';
 
 /**
  * GET /api/line/link/start — 產生 LINE Login 授權網址（需登入）
@@ -18,15 +18,21 @@ export async function GET(request) {
         }
 
         const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
+        const nonce = createLinkNonce();
         const params = new URLSearchParams({
             response_type: 'code',
             client_id: channelId,
             redirect_uri: `${origin}/api/line/link/callback`,
-            state: signLinkState(authCheck.user.id),
+            state: signLinkState(authCheck.user.id, nonce),
             scope: 'profile openid',
         });
 
-        return NextResponse.json({ success: true, url: `https://access.line.me/oauth2/v2.1/authorize?${params}` });
+        const res = NextResponse.json({ success: true, url: `https://access.line.me/oauth2/v2.1/authorize?${params}` });
+        // 只有發起綁定的這個瀏覽器拿得到 nonce；LINE 導回 callback 屬頂層導覽，SameSite=Lax 會帶上
+        res.cookies.set(LINK_NONCE_COOKIE, nonce, {
+            httpOnly: true, secure: true, sameSite: 'lax', path: '/api/line/link/callback', maxAge: 10 * 60,
+        });
+        return res;
     } catch (error) {
         return handleApiError(error, '/api/line/link/start');
     }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
-import { verifyUserAuth, handleApiError } from '@/lib/apiMiddleware';
+import { verifyUserAuth, handleApiError, getClientIp } from '@/lib/apiMiddleware';
 
 export async function POST(request) {
     const endpoint = '/api/users/login-log';
@@ -12,7 +12,7 @@ export async function POST(request) {
         if (!authCheck.success) return authCheck.error;
 
         const user = authCheck.user;
-        const ip = (request.headers.get('x-forwarded-for') || '').split(',')[0].trim() || request.ip || 'unknown';
+        const ip = getClientIp(request);
         const userAgent = request.headers.get('user-agent') || 'unknown';
 
         // 去重：同一使用者 5 分鐘內已有登入紀錄則跳過，避免重新整理 / 多分頁 / token 刷新造成重複列

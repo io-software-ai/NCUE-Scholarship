@@ -130,15 +130,7 @@ export default function ProfilePage() {
         }
     };
 
-    const autoHealRef = useRef(false);
-    useEffect(() => {
-        if (autoHealRef.current) return;
-        if (user && derivedStudentId && !user?.profile?.student_id) {
-            autoHealRef.current = true;
-            updateProfile({ student_id: derivedStudentId }).catch(() => {});
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, derivedStudentId]);
+    // 學號補寫由伺服器端 /api/auth/profile-sync 於登入時處理（前端不可直接寫入 student_id）
 
     useEffect(() => {
         if (!loading && !isAuthenticated) {
@@ -204,10 +196,7 @@ export default function ProfilePage() {
 
         setIsSavingName(true);
         setFormData(prev => ({ ...prev, name: newName })); // 樂觀更新
-        const result = await updateProfile({
-            name: newName,
-            student_id: derivedStudentId || user?.profile?.student_id || null,
-        });
+        const result = await updateProfile({ name: newName });
         if (result.success) {
             showToast('姓名已更新', 'success');
         } else {

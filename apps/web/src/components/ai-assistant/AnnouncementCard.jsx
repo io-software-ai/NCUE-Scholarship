@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { sanitizeRichHtml } from '@/lib/richHtml';
 import { authFetch } from '@/lib/authFetch';
 import { getAnnouncementUrl } from '@/lib/siteConfig';
 import { CalendarDays, ExternalLink, AlertTriangle, ChevronDown, ChevronUp, BellRing, Check, Loader2 } from 'lucide-react';
@@ -105,7 +106,7 @@ const AnnouncementCard = ({ id }) => {
                 <div className="relative">
                     <div
                         className={`mt-3 text-sm text-ink rich-text-content ${expanded ? '' : 'max-h-28 overflow-hidden'}`}
-                        dangerouslySetInnerHTML={{ __html: announcement.summary || '' }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(announcement.summary || '') }}
                     />
                     {!expanded && (
                         <button

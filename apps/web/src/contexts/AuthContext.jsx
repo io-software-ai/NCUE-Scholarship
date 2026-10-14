@@ -207,8 +207,8 @@ export const AuthProvider = ({ children }) => {
 
     const updateProfile = async (profileData) => {
         setError(null);
-        const { name, student_id } = profileData;
-        const result = await authService.updateProfile({ name, student_id });
+        const { name } = profileData;
+        const result = await authService.updateProfile({ name });
         if (result.success) {
             await refreshUserData();
         } else {

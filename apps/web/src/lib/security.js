@@ -26,7 +26,19 @@ export function rateLimit(identifier, limit = 10, windowMs = 60000) {
   
   // 記錄新請求
   requests.push(now);
+  pruneRateLimitMap(now);
   return true;
+}
+
+// 定期清掉已無有效紀錄的 key，避免 Map 無限成長（記憶體耗盡型 DoS）
+let lastPrune = 0;
+function pruneRateLimitMap(now) {
+  if (now - lastPrune < 60000) return;
+  lastPrune = now;
+  const maxWindow = 60 * 60 * 1000;
+  for (const [key, list] of rateLimitMap) {
+    if (!list.length || list[list.length - 1] < now - maxWindow) rateLimitMap.delete(key);
+  }
 }
 
 export function validateUserInput(data) {

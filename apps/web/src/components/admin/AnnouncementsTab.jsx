@@ -71,9 +71,10 @@ export default function AnnouncementsTab() {
             let query = supabase.from('announcements')
                 .select('id, title, category, view_count, application_end_date, is_active, updated_at, internal_id', { count: 'exact' });
 
-            if (searchTerm) {
-                // Server-side search
-                query = query.or(`title.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%,internal_id.ilike.%${searchTerm}%`);
+            const safeTerm = String(searchTerm || '').replace(/[%_,()*\\"]/g, ' ').trim();
+            if (safeTerm) {
+                // Server-side search（移除 PostgREST 篩選語法字元）
+                query = query.or(`title.ilike.%${safeTerm}%,category.ilike.%${safeTerm}%,internal_id.ilike.%${safeTerm}%`);
             }
 
             // Server-side sorting

@@ -1,5 +1,17 @@
 /** @type {import('next').NextConfig} */
+const SECURITY_HEADERS = [
+    // 防點擊劫持：只允許本站把頁面嵌入 iframe
+    { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+    { key: 'Content-Security-Policy', value: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'" },
+    { key: 'X-Content-Type-Options', value: 'nosniff' },
+    // HSTS 由 Cloudflare 統一送出，這裡不重複（重複的 HSTS 標頭瀏覽器只採用第一個）
+    { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+    { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' },
+];
+
 const nextConfig = {
+    poweredByHeader: false,
+
     // 允許開發時外部網域存取
     allowedDevOrigins: [
         '10.21.44.243',
@@ -23,7 +35,8 @@ const nextConfig = {
                 ],
             },
             {
-                // 為所有 API 路由設置 CORS
+                // API 的 CORS：嵌入式 widget（/api/public/*）與行動 App 需要跨來源呼叫。
+                // 驗證一律走 Authorization 標頭（不用 cookie），因此 * 不會讓他站帶著使用者身分呼叫。
                 source: '/api/:path*',
                 headers: [
                     {
@@ -49,22 +62,9 @@ const nextConfig = {
                 ],
             },
             {
-                // 為其他路由設置基本 CORS
-                source: '/((?!api).*)',
-                headers: [
-                    {
-                        key: 'Access-Control-Allow-Origin',
-                        value: '*',
-                    },
-                    {
-                        key: 'Access-Control-Allow-Methods',
-                        value: 'GET, POST, PUT, DELETE, OPTIONS',
-                    },
-                    {
-                        key: 'Access-Control-Allow-Headers',
-                        value: 'Content-Type, Authorization, X-Requested-With',
-                    },
-                ],
+                // 全站安全標頭（原本頁面路由的 CORS * 沒有任何用途，已移除）
+                source: '/:path*',
+                headers: SECURITY_HEADERS,
             },
         ];
     },

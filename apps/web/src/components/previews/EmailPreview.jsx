@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { siteConfig } from '@/lib/siteConfig';
+import { sanitizeRichHtml } from '@/lib/richHtml';
 
 const parseUrls = (urlsString) => {
     if (!urlsString) return [];
@@ -29,7 +30,7 @@ export default function EmailPreview({ announcement }) {
     
     const externalUrls = useMemo(() => parseUrls(announcement.external_urls), [announcement.external_urls]);
     
-    let richTextContent = announcement.summary || '<p>請至平台查看詳細內容。</p>';
+    let richTextContent = sanitizeRichHtml(announcement.summary || '<p>請至平台查看詳細內容。</p>');
 
     // Absolute path conversion for preview
     richTextContent = richTextContent.replace(/(href|src)\s*=\s*["']([^"']*)["']/g, (match, attr, path) => {
@@ -42,9 +43,12 @@ export default function EmailPreview({ announcement }) {
 
     const renderExternalUrls = () => {
         if (externalUrls.length === 0) return '';
-        const linksHtml = externalUrls.map(item => 
-            `<li style="margin-bottom: 8px;"><a href="${item.url}" target="_blank" style="color: #005A9C; text-decoration: underline; word-break: break-all;">${item.url}</a></li>`
-        ).join('');
+        const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const linksHtml = externalUrls
+            .filter(item => /^https?:\/\//i.test(String(item.url || '').trim()))
+            .map(item =>
+                `<li style="margin-bottom: 8px;"><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer" style="color: #005A9C; text-decoration: underline; word-break: break-all;">${esc(item.url)}</a></li>`
+            ).join('');
         return `<hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0;" /><div style="margin-top: 24px;"><h3 style="font-weight: 700; color: #1f2937; margin-top: 24px; margin-bottom: 12px; font-size: 18px;">相關連結</h3><ul style="list-style-type: none; padding-left: 0; margin-top: 12px;">${linksHtml}</ul></div>`;
     };
 

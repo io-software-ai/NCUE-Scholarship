@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
+import { randomInt } from 'crypto';
 import { after } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -309,7 +310,7 @@ async function processEvent(event) {
                             break;
                         }
 
-                        const code = String(Math.floor(100000 + Math.random() * 900000));
+                        const code = String(randomInt(100000, 1000000)); // 密碼學亂數（Math.random 可被預測）
                         await supabaseServer.from('line_bind_codes').delete().eq('line_user_id', lineUserId);
                         await supabaseServer.from('line_bind_codes').insert({
                             code,

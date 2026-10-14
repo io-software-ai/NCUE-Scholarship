@@ -65,12 +65,38 @@ const FeedbackButtons = ({ messageKey, question, answer, sessionId }) => {
     );
 };
 
-/** AI 提議訂閱後的「確認訂閱」按鈕（點擊即完成訂閱，成功後轉為已訂閱狀態） */
+/**
+ * AI 提議訂閱後的「確認訂閱」按鈕（點擊即完成訂閱，成功後轉為已訂閱狀態）。
+ * 掛載時先向後端查詢是否已訂閱：重整頁面、或使用者以文字同意由工具完成訂閱後，
+ * 按鈕都會直接顯示「已訂閱」而不是再次可點。
+ */
 const SubscribeConfirmButton = ({ proposal }) => {
-    const [status, setStatus] = useState('idle'); // idle | loading | done | error
+    const [status, setStatus] = useState('checking'); // checking | idle | loading | done | error
+    const [daysBefore, setDaysBefore] = useState(proposal.daysBefore);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await authFetch(`/api/subscriptions?announcementId=${encodeURIComponent(proposal.announcementId)}`);
+                const data = res.ok ? await res.json().catch(() => ({})) : {};
+                const existing = data?.subscriptions?.[0];
+                if (cancelled) return;
+                if (existing) {
+                    setDaysBefore(existing.days_before || proposal.daysBefore);
+                    setStatus('done');
+                } else {
+                    setStatus('idle');
+                }
+            } catch (e) {
+                if (!cancelled) setStatus('idle');
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [proposal.announcementId, proposal.daysBefore]);
 
     const handleConfirm = async () => {
-        if (status === 'loading' || status === 'done') return;
+        if (status !== 'idle' && status !== 'error') return;
         setStatus('loading');
         try {
             const res = await authFetch('/api/subscriptions', {
@@ -79,6 +105,7 @@ const SubscribeConfirmButton = ({ proposal }) => {
                 body: JSON.stringify({ announcementId: proposal.announcementId, daysBefore: proposal.daysBefore }),
             });
             if (!res.ok) throw new Error((await res.json())?.error || '訂閱失敗');
+            setDaysBefore(proposal.daysBefore);
             setStatus('done');
         } catch (e) {
             console.error('[SubscribeConfirm]', e);
@@ -90,16 +117,16 @@ const SubscribeConfirmButton = ({ proposal }) => {
         <div className="mt-3">
             {status === 'done' ? (
                 <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-ok/10 text-ok border border-ok/30">
-                    <Check size={15} aria-hidden="true" /> 已訂閱（截止前 {proposal.daysBefore} 天提醒）
+                    <Check size={15} aria-hidden="true" /> 已訂閱（截止前 {daysBefore} 天提醒）
                 </span>
             ) : (
                 <button
                     type="button"
                     onClick={handleConfirm}
-                    disabled={status === 'loading'}
+                    disabled={status === 'loading' || status === 'checking'}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border border-primary bg-primary text-white dark:text-[#10151B] hover:bg-primary-hover transition-colors duration-150 disabled:opacity-60"
                 >
-                    {status === 'loading' ? <Loader2 size={15} className="animate-spin" /> : <BellRing size={15} aria-hidden="true" />}
+                    {status === 'loading' || status === 'checking' ? <Loader2 size={15} className="animate-spin" /> : <BellRing size={15} aria-hidden="true" />}
                     確認訂閱（截止前 {proposal.daysBefore} 天提醒）
                 </button>
             )}

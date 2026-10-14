@@ -312,7 +312,7 @@ export async function searchKnowledge(keywords = [], { limit = 8, apiKey = null 
     const rowStore = new Map();     // announcement_id -> row
     let kwRank = 0;
     for (const term of terms) {
-        const escaped = term.replace(/[%_]/g, m => `\\${m}`);
+        const escaped = term.replace(/[%_]/g, m => `\\${m}`).replace(/[,()"]/g, ' '); // 防 .or() 篩選字串注入
         const { data, error } = await supabaseServer
             .from('ai_knowledge')
             .select('announcement_id, title, content, metadata')

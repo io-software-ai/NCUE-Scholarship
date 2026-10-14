@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
-import { handleApiError } from '@/lib/apiMiddleware';
+import { handleApiError, getClientIp } from '@/lib/apiMiddleware';
 import { deriveStudentIdFromEmail } from '@/lib/studentId';
 
 /**
@@ -66,8 +66,7 @@ export async function POST(request) {
         const userAgent = request.headers.get('user-agent') || 'unknown';
         
         // 取得更準確的客戶端 IP
-        const forwardedFor = request.headers.get('x-forwarded-for');
-        const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : (request.ip || 'unknown');
+        const ip = getClientIp(request);
 
         let profile;
 
@@ -81,24 +80,10 @@ export async function POST(request) {
         if (profileById) {
             profile = profileById;
         } else {
-            // 4. 根據 Email 檢查 (處理 Google 登入關聯)
-            const { data: profileByEmail } = await supabaseServer
-                .from('profiles')
-                .select('*')
-                .eq('email', email)
-                .maybeSingle();
-
-            if (profileByEmail) {
-                const { data: linkedProfile, error: linkError } = await supabaseServer
-                    .from('profiles')
-                    .update({ id: user.id })
-                    .eq('id', profileByEmail.id)
-                    .select()
-                    .single();
-
-                if (linkError) throw linkError;
-                profile = linkedProfile;
-            } else {
+            // 4.（已移除）舊版會把「同 email 的既有 profile」改綁到目前帳號，連 role / 學號一起繼承。
+            // profiles.id 有 FK → auth.users，同 email 的 profile 必定屬於另一個現存帳號，改綁等同搶奪他人資料，
+            // 因此一律只為自己建立新 profile。
+            {
                 // 5. 建立全新 Profile
                 const name = user.user_metadata?.full_name || user.user_metadata?.name || '';
                 const { data: newProfile, error: createError } = await supabaseServer

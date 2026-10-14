@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
+import { randomInt } from 'crypto';
 import { supabaseServer } from '@/lib/supabase/server';
 import { verifyUserAuth, checkRateLimit, handleApiError, logSuccessAction } from '@/lib/apiMiddleware';
 import { deriveStudentIdFromEmail, isStudentIdFormat } from '@/lib/studentId';
@@ -43,7 +44,7 @@ export async function POST(request) {
                 return NextResponse.json({ error: `此${idLabel}已被其他帳號綁定，若有疑問請聯繫平台維護團隊` }, { status: 409 });
             }
 
-            const verifyCode = String(Math.floor(100000 + Math.random() * 900000));
+            const verifyCode = String(randomInt(100000, 1000000));
             const { error: upsertErr } = await supabaseServer.from('school_email_codes').upsert({
                 user_id: userId,
                 email: normalized,

@@ -25,6 +25,7 @@ import { buildCriteria, extractCriteriaFromBackground, scoreAnnouncements } from
 import { normalizeTopicKey } from './qualityEval';
 import { siteConfig, getAnnouncementUrl } from '../siteConfig';
 import { buildGoogleCalendarUrl, CATEGORY_NAMES } from '../announcementUi';
+import { safeFetch, isAllowedUrlSyntax } from '../safeFetch';
 
 const TAIPEI_TZ = 'Asia/Taipei';
 
@@ -289,17 +290,6 @@ export const toolDeclarations = [
     },
 ];
 
-/** SSRF 防護：僅允許公開的 http(s) 網址 */
-function isSafeExternalUrl(raw) {
-    let u;
-    try { u = new URL(raw); } catch { return false; }
-    if (!/^https?:$/.test(u.protocol)) return false;
-    const host = u.hostname.toLowerCase();
-    if (host === 'localhost' || host === '0.0.0.0' || host.endsWith('.local') || host.endsWith('.internal')) return false;
-    if (/^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
-    return true;
-}
-
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -439,18 +429,20 @@ const executors = {
 
     async read_webpage({ url }) {
         const target = String(url || '').trim();
-        if (!isSafeExternalUrl(target)) return { error: '無效或不允許的網址。' };
+        if (!isAllowedUrlSyntax(target)) return { error: '無效或不允許的網址。' };
         try {
-            const res = await fetchWithTimeout(target, {
+            // safeFetch：擋內網 / 本機 / IPv6 與 DNS 繞過，重新導向逐跳檢查
+            const res = await safeFetch(target, {
                 headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ScholarshipBot/1.0)' },
-                redirect: 'follow',
-            }, 8000);
+                timeoutMs: 8000,
+                maxBytes: 1024 * 1024,
+            });
             if (!res.ok) return { error: `網頁讀取失敗（${res.status}）。` };
-            const contentType = res.headers.get('content-type') || '';
+            const contentType = res.contentType;
             if (!contentType.includes('html') && !contentType.includes('text')) {
                 return { error: `不支援的內容類型（${contentType.split(';')[0]}），僅能讀取網頁。` };
             }
-            const html = (await res.text()).slice(0, 500000);
+            const html = res.text().slice(0, 500000);
             const $ = cheerioLoad(html);
             $('script, style, nav, footer, iframe, noscript, svg').remove();
             const text = $('body').text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
@@ -462,7 +454,8 @@ const executors = {
                 truncated: text.length > 6000,
             };
         } catch (e) {
-            return { error: `網頁讀取失敗：${e.name === 'AbortError' ? '逾時' : e.message}` };
+            if (e.name === 'UnsafeUrlError') return { error: '不允許的網址（僅能讀取公開網站）。' };
+            return { error: `網頁讀取失敗：${e.name === 'AbortError' ? '逾時' : '無法連線'}` };
         }
     },
 
@@ -628,7 +621,8 @@ const executors = {
         const { data, error } = await supabaseServer
             .from('announcements')
             .select('id, title, category, application_start_date, application_end_date, target_audience, application_limitations, submission_method, external_urls, summary, is_active')
-            .in('id', ids);
+            .in('id', ids)
+            .eq('is_active', true); // 未上架（草稿 / 下架）公告不可外流
         if (error) return { error: `查詢公告失敗：${error.message}` };
 
         const today = todayInTaipei();

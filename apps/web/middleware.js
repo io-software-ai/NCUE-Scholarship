@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { safeRedirectPath } from './src/lib/safeRedirect';
 import { createServerClient } from '@supabase/ssr';
 
 export async function middleware(request) {
@@ -69,7 +70,7 @@ export async function middleware(request) {
 
 		// 如果用戶已登入但訪問認證頁面，重定向到指定頁面或個人資料頁面
 		if (session && isAuthPage) {
-			const redirectTo = request.nextUrl.searchParams.get('redirect') || '/profile';
+			const redirectTo = safeRedirectPath(request.nextUrl.searchParams.get('redirect'));
 			return NextResponse.redirect(new URL(redirectTo, request.url));
 		}
 

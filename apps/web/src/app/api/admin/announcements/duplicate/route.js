@@ -80,7 +80,12 @@ export async function POST(request) {
           // 解析檔案路徑
           // stored_file_path 通常是 "/storage/attachments/filename.ext"
           const relativePath = att.stored_file_path.startsWith('/') ? att.stored_file_path.slice(1) : att.stored_file_path;
-          const sourcePath = path.join(publicDir, relativePath);
+          const sourcePath = path.resolve(publicDir, relativePath);
+          // 只允許複製附件目錄內的檔案（防 stored_file_path 被竄改成 ../../.env.local 之類）
+          if (!sourcePath.startsWith(path.join(publicDir, 'storage', 'attachments') + path.sep)) {
+            console.warn(`[Duplicate] 不合法的附件路徑，略過: ${att.stored_file_path}`);
+            continue;
+          }
           
           // 檢查原始檔案是否存在
           if (!fs.existsSync(sourcePath)) {

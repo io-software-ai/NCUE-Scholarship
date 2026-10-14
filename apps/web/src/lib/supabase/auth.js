@@ -128,10 +128,12 @@ export const authService = {
     
 
       // 更新使用者個人資料
-      async updateProfile({ name, student_id }) {
+      // 學號只能由伺服器端（/api/auth/profile-sync、/api/verify-school-email）依已驗證信箱寫入；
+      // 資料庫欄位級權限 + trigger 也會擋下前端對 student_id / role 等欄位的修改。
+      async updateProfile({ name }) {
         try {
           const { data, error } = await supabase.auth.updateUser({
-            data: { name, student_id }
+            data: { name }
           });
 
           if (error) throw error;
@@ -140,10 +142,7 @@ export const authService = {
 
           const { error: profileError } = await supabase
             .from('profiles')
-            .update({
-              username: name,
-              student_id
-            })
+            .update({ username: name })
             .eq('id', userId);
 
           if (profileError) throw profileError;
