@@ -87,6 +87,8 @@ const TinyMceEditor = ({ value, onChange, placeholder, disabled, init = {} }) =>
             `}</style>
             <Editor
                 apiKey={settings.NEXT_PUBLIC_TINYMCE_API_KEY || process.env.NEXT_PUBLIC_TINYMCE_API_KEY}
+                // 編輯器核心由 Tiny Cloud 依 channel 提供：'8' 會自動取得 8.x 最新修補版（含資安修正）
+                cloudChannel="8"
                 onInit={(evt, editor) => editorRef.current = editor}
                 
                 value={value || ''}
