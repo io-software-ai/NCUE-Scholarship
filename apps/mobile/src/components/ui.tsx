@@ -2,7 +2,7 @@
  * 共用 Material 3 UI 原件 — 版面一致、明暗自動、無硬編碼色。
  */
 import React from 'react';
-import { View, ViewStyle } from 'react-native';
+import { TextStyle, View, ViewStyle } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { Text, Button } from 'react-native-paper';
 import type { LucideIcon } from 'lucide-react-native';
@@ -83,7 +83,7 @@ export function EmptyState({
 }
 
 /** 區塊小標 */
-export function SectionLabel({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
+export function SectionLabel({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
   const theme = useAppTheme();
   return (
     <Text
